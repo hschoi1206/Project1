@@ -224,6 +224,7 @@ nav button.on svg{stroke:var(--weight)}
   <h2>초기화</h2>
   <button class="btn danger" id="resetBtn" style="width:100%">모든 기록 삭제</button>
   <p class="note">기록 전체와 내 정보(키·생년월일·성별·투약 설정)를 지우고 처음 상태로 돌립니다. 되돌릴 수 없으니 먼저 내보내기로 백업하세요.</p>
+  <p class="note" id="appVersion" style="margin-top:24px;text-align:center"></p>
 </section>
 
 <nav>
@@ -243,6 +244,8 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const WK = '일월화수목금토';
 const f1 = v => (v == null ? '-' : v.toFixed(1));
+const APP_VERSION = '1.0.0';
+const isNativeApp = () => !!window.Capacitor?.isNativePlatform?.();
 const todayIso = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
 
 /* ===== 저장소 ===== */
@@ -422,11 +425,23 @@ $('importFile').addEventListener('change', async e => {
     toast('파일을 불러오지 못했습니다. 이 앱에서 내보낸 CSV 파일인지 확인하세요. 기존 기록은 그대로입니다.');
   }
 });
-$('exportBtn').addEventListener('click', () => {
+$('exportBtn').addEventListener('click', async () => {
   if (!state.records.length) return toast('내보낼 기록이 없습니다.');
+  const name = `weight_${todayIso()}.csv`, csv = C.toCsv(state.records);
+  if (isNativeApp()) {
+    // 안드로이드 앱(APK): 파일을 앱 캐시에 쓰고 공유 창으로 보낸다(드라이브, 메신저 등).
+    try {
+      const { Filesystem, Share } = window.Capacitor.Plugins;
+      const { uri } = await Filesystem.writeFile({ path: name, data: csv, directory: 'CACHE', encoding: 'utf8' });
+      await Share.share({ title: name, dialogTitle: '백업 파일 보내기', files: [uri] });
+    } catch (e) {
+      if (!/cancel/i.test(String(e?.message || e))) toast('내보내지 못했습니다. 다시 시도하세요.');
+    }
+    return;
+  }
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([C.toCsv(state.records)], { type: 'text/csv;charset=utf-8' }));
-  a.download = `weight_${todayIso()}.csv`;
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   toast(`기록 ${state.records.length}일을 CSV로 내보냈습니다.`);
@@ -702,7 +717,8 @@ function renderGlp() {
 load();
 navigator.storage?.persist?.();
 show('home');
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if (!isNativeApp() && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+$('appVersion').textContent = `버전 ${APP_VERSION}${isNativeApp() ? ' (안드로이드 앱)' : ''}`;
 </script>
 </body>
 </html>

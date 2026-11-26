@@ -1,0 +1,8 @@
+{
+  "appId": "io.github.hschoi1206.weight",
+  "appName": "체중·허리 기록",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#152027"
+  }
+}
