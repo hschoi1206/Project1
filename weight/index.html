@@ -99,6 +99,10 @@ h2{font-size:15px;font-weight:600;color:var(--muted);margin:28px 0 10px}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:10px;font-size:13px;color:var(--muted)}
 .legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
 .hint{color:var(--muted);font-size:12px;margin-top:8px}
+.corrstats{display:flex;gap:18px;margin-top:14px;flex-wrap:wrap}
+.corrstats span{display:flex;flex-direction:column}
+.corrstats b{font-size:20px;font-variant-numeric:tabular-nums}
+.corrstats small{color:var(--muted);font-size:12px}
 
 /* 하단 탭 */
 nav{position:fixed;left:0;right:0;bottom:0;height:calc(var(--nav) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);display:flex;background:var(--surface);border-top:1px solid var(--line);z-index:10}
@@ -368,10 +372,208 @@ $('exportBtn').addEventListener('click', async () => {
   toast(`기록 ${state.records.length}일을 내보냈습니다.`);
 });
 
-/* ===== 차트 · 투약 비교 (다음 단계에서 구현) ===== */
+/* ===== 그래프 공통 ===== */
+const COL = { raw: '#cdd8dd', weight: '#8fd4bf', waist: '#f0c74a', violet: '#b49cff', blue: '#7aa7ff', placebo: '#8c9ca4', grid: '#2f424e', label: '#8fa3ac' };
+const PAD = { l: 8, r: 46, t: 12, b: 26 };
+const ymd2 = d => { const s = C.isoOf(d); return `${s.slice(2, 4)}.${s.slice(5, 7)}.${s.slice(8)}`; };
+function niceTicks(lo, hi, n = 5) {
+  const raw = (hi - lo) / n, p = 10 ** Math.floor(Math.log10(raw)), step = [1, 2, 2.5, 5, 10].map(m => m * p).find(s => s >= raw);
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6));
+  return { ticks: out, step };
+}
+const pathOf = (pts, X, Y) => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+// 가로축 드래그·두 손가락 확대·두 번 탭 초기화 (cycle 앱 TimeZoom 이식, 최소 폭 옵션 추가)
+class TimeZoom {
+  constructor(svg, o) {
+    this.svg = svg; this.o = o; this.ptrs = new Map(); this.view = null; this.lastTap = 0; this.raf = 0;
+    svg.addEventListener('pointerdown', e => this.down(e));
+    svg.addEventListener('pointermove', e => this.move(e));
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => svg.addEventListener(n, e => this.up(e)));
+    svg.addEventListener('wheel', e => this.wheel(e), { passive: false });
+    this.ro = new ResizeObserver(() => this.draw()); this.ro.observe(svg);
+  }
+  W() { return this.svg.clientWidth || 360; }
+  reset() { this.view = this.o.defaultView(); this.draw(); }
+  clamp(t0, t1) {
+    const [b0, b1] = this.o.bounds(), maxS = Math.max(this.o.minSpan, b1 - b0);
+    const s = Math.min(maxS, Math.max(this.o.minSpan, t1 - t0)), c = (t0 + t1) / 2;
+    t0 = c - s / 2; t1 = c + s / 2;
+    if (t0 < b0) { t1 += b0 - t0; t0 = b0; }
+    if (t1 > b1) { t0 -= t1 - b1; t1 = b1; }
+    return [t0, t1];
+  }
+  snap() {
+    const pts = [...this.ptrs.values()], r = this.svg.getBoundingClientRect();
+    this.g = { v: [...this.view], left: r.left, n: pts.length };
+    if (pts.length === 1) this.g.x = pts[0].x;
+    if (pts.length >= 2) { this.g.cx = (pts[0].x + pts[1].x) / 2; this.g.d = Math.max(20, Math.abs(pts[0].x - pts[1].x)); }
+  }
+  down(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    try { this.svg.setPointerCapture(e.pointerId); } catch (_) {}
+    this.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now() });
+    this.snap();
+  }
+  move(e) {
+    const p = this.ptrs.get(e.pointerId); if (!p) return;
+    p.x = e.clientX; p.y = e.clientY;
+    const pts = [...this.ptrs.values()], W = this.W(), g = this.g, span0 = g.v[1] - g.v[0];
+    if (pts.length === 1) {
+      if (Math.abs(p.x - p.x0) < 4 && Math.abs(p.y - p.y0) < 4) return;
+      const sh = -(p.x - g.x) * span0 / W;
+      this.view = this.clamp(g.v[0] + sh, g.v[1] + sh);
+    } else {
+      const cx = (pts[0].x + pts[1].x) / 2, d = Math.max(20, Math.abs(pts[0].x - pts[1].x));
+      const ns = span0 * g.d / d, anchor = g.v[0] + (g.cx - g.left) / W * span0, t0 = anchor - (cx - g.left) / W * ns;
+      this.view = this.clamp(t0, t0 + ns);
+    }
+    this.hideTip(); this.draw();
+  }
+  up(e) {
+    const p = this.ptrs.get(e.pointerId); if (!p) return;
+    const wasSingle = this.ptrs.size === 1 && this.g.n === 1;
+    this.ptrs.delete(e.pointerId);
+    if (e.type === 'pointerup' && wasSingle && Math.hypot(p.x - p.x0, p.y - p.y0) < 8 && performance.now() - p.t0 < 350) {
+      const now = performance.now();
+      if (now - this.lastTap < 320) { this.lastTap = 0; this.hideTip(); this.reset(); }
+      else { this.lastTap = now; this.tap(p.x, p.y); }
+    }
+    this.snap();
+  }
+  wheel(e) {
+    e.preventDefault();
+    const r = this.svg.getBoundingClientRect(), W = this.W(), [t0, t1] = this.view, s = t1 - t0;
+    const ns = s * Math.exp(e.deltaY * 0.0015), a = t0 + (e.clientX - r.left) / W * s, n0 = a - (e.clientX - r.left) / W * ns;
+    this.view = this.clamp(n0, n0 + ns); this.hideTip(); this.draw();
+  }
+  tap(cx, cy) {
+    const r = this.svg.getBoundingClientRect(), hit = this.o.hit?.(cx - r.left, cy - r.top), tip = this.o.tip;
+    if (!hit) return this.hideTip();
+    tip.textContent = hit.text; tip.style.display = 'block';
+    const bw = tip.offsetWidth, bh = tip.offsetHeight;
+    tip.style.left = Math.min(this.W() - bw - 2, Math.max(2, hit.x - bw / 2)) + 'px';
+    tip.style.top = Math.max(0, hit.y - bh - 12) + 'px';
+  }
+  hideTip() { if (this.o.tip) this.o.tip.style.display = 'none'; }
+  draw() {
+    if (this.raf) return;
+    this.raf = requestAnimationFrame(() => {
+      this.raf = 0;
+      if (!this.svg.isConnected || !this.svg.clientWidth) return;
+      if (!this.view) this.view = this.o.defaultView();
+      this.o.render(this.view, this.W());
+    });
+  }
+}
+
+// 시계열 그래프: series = [{pts:[[x,y]], color, width, dots, label}], 가로 x는 일 번호 또는 주차
+function plotTime(svg, W, H, view, series, opt) {
+  const [t0, t1] = view, x0 = PAD.l, x1 = W - PAD.r, y0 = PAD.t, y1 = H - PAD.b;
+  const vis = series.flatMap(s => s.pts.filter(p => p[0] >= t0 - (t1 - t0) * .02 && p[0] <= t1 + (t1 - t0) * .02).map(p => p[1]));
+  let lo = Math.min(...vis, ...(opt.yInclude || [])), hi = Math.max(...vis, ...(opt.yInclude || []));
+  if (!isFinite(lo)) { lo = 0; hi = 1; }
+  if (hi - lo < 1) { const c = (hi + lo) / 2; lo = c - .5; hi = c + .5; }
+  const padY = (hi - lo) * .08; lo -= padY; hi += padY;
+  const X = t => x0 + (t - t0) / (t1 - t0) * (x1 - x0), Y = v => y1 - (v - lo) / (hi - lo) * (y1 - y0);
+  const { ticks } = niceTicks(lo, hi, 5);
+  let g = `<defs><clipPath id="clip-${svg.id}"><rect x="${x0}" y="${y0 - 4}" width="${x1 - x0}" height="${y1 - y0 + 8}"/></clipPath></defs>`;
+  g += ticks.map(v => `<line x1="${x0}" x2="${x1}" y1="${Y(v)}" y2="${Y(v)}" stroke="${COL.grid}"/><text x="${W - 4}" y="${Y(v) + 4}" text-anchor="end" fill="${COL.label}" font-size="11">${opt.yFmt(v)}</text>`).join('');
+  const xt = opt.xTicks(t0, t1);
+  g += xt.map(([t, lab]) => `<text class="xl" x="${X(t)}" y="${H - 8}" text-anchor="middle" fill="${COL.label}" font-size="11">${lab}</text>`).join('');
+  g += `<g clip-path="url(#clip-${svg.id})">`;
+  for (const s of series) {
+    const pts = s.pts.filter(p => p[0] >= t0 - (t1 - t0) && p[0] <= t1 + (t1 - t0));
+    if (!pts.length) continue;
+    g += `<path d="${pathOf(pts, X, Y)}" fill="none" stroke="${s.color}" stroke-width="${s.width || 1.6}" stroke-linejoin="round" stroke-linecap="round" ${s.dash ? `stroke-dasharray="${s.dash}"` : ''} opacity="${s.opacity || 1}"/>`;
+    if (s.dots && (x1 - x0) / Math.max(1, pts.length) > 3) g += pts.map(p => `<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="${s.dots}" fill="${s.color}"/>`).join('');
+  }
+  if (opt.endLabels) for (const s of series) { const p = s.pts[s.pts.length - 1]; if (p && p[0] <= t1 && p[0] >= t0) g += `<text x="${Math.min(X(p[0]) + 4, x1 - 2)}" y="${Y(p[1]) - 6}" fill="${s.color}" font-size="11" text-anchor="${X(p[0]) > x1 - 60 ? 'end' : 'start'}">${s.endLabel || ''}</text>`; }
+  g += '</g>';
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H);
+  svg.innerHTML = g;
+  return { X, Y, lo, hi };
+}
+const dateTicks = (t0, t1) => { const n = 4, out = []; for (let i = 0; i < n; i++) { const t = t0 + (t1 - t0) * (i + .5) / n; out.push([t, ymd2(Math.round(t))]); } return out; };
+
+/* ===== 차트 탭 ===== */
+const chartSt = { mode: 'day', field: 'weight', range: 'all' };
+let zoom = null;
+document.querySelectorAll('#chartModes button').forEach(b => b.addEventListener('click', () => { chartSt.mode = b.dataset.mode; renderChart(); }));
+const MODES = {
+  day: { minSpan: 10, def: 90, build: s => [{ pts: s, color: COL.raw, width: 1, opacity: .75, label: '일별' }, { pts: C.rolling(s, 7), color: 'F', width: 2.2, label: '7일 평균' }] },
+  week: { minSpan: 56, def: 365, build: s => { const w = C.weekly(s); return [{ pts: w, color: COL.raw, width: 1, dots: 1.6, opacity: .8, label: '주 평균' }, { pts: C.sma(w, 5), color: 'F', width: 2.2, label: '5주 평균' }, { pts: C.sma(w, 20), color: COL.violet, width: 2, label: '20주 평균' }]; } },
+  month: { minSpan: 180, def: Infinity, build: s => { const m = C.monthly(s); return [{ pts: m, color: COL.raw, width: 1, dots: 2, opacity: .8, label: '월 평균' }, { pts: C.sma(m, 5), color: 'F', width: 2.2, label: '5개월 평균' }, { pts: C.sma(m, 20), color: COL.violet, width: 2, label: '20개월 평균' }]; } },
+};
 function renderChart() {
-  if (!state.records.length) { $('chartBody').innerHTML = '<p class="empty">기록이 없습니다. 기록이 쌓이면 그래프가 그려집니다.</p>'; return; }
-  $('chartBody').innerHTML = '';
+  document.querySelectorAll('#chartModes button').forEach(b => b.classList.toggle('on', b.dataset.mode === chartSt.mode));
+  zoom?.ro.disconnect(); zoom = null;
+  const body = $('chartBody');
+  if (!state.records.length) { body.innerHTML = '<p class="empty">기록이 없습니다. 기록이 쌓이면 그래프가 그려집니다.</p>'; return; }
+  if (chartSt.mode === 'corr') return renderCorr(body);
+  const M = MODES[chartSt.mode], f = chartSt.field, fc = COL[f], unit = f === 'weight' ? 'kg' : 'cm';
+  body.innerHTML = `<div class="seg" id="chartField" style="margin-top:10px"><button data-field="weight">체중</button><button data-field="waist">허리둘레</button></div>
+    <div class="legend" id="chartLegend"></div><div class="chart"><svg id="chartSvg"></svg><div class="tip" id="chartTip"></div></div>
+    <p class="hint">두 손가락으로 기간 확대·축소, 한 손가락으로 이동, 두 번 탭하면 처음 보기로 돌아갑니다. 선을 탭하면 값이 보입니다.</p>`;
+  body.querySelectorAll('#chartField button').forEach(b => { b.classList.toggle('on', b.dataset.field === f); b.onclick = () => { chartSt.field = b.dataset.field; renderChart(); }; });
+  const s = C.series(state.records, f);
+  if (!s.length) { body.querySelector('.chart').innerHTML = `<p class="empty">${f === 'weight' ? '체중' : '허리둘레'} 기록이 없습니다.</p>`; return; }
+  const series = M.build(s).map(x => ({ ...x, color: x.color === 'F' ? fc : x.color, pts: x.pts.map(p => [p.d, p.v]) }));
+  $('chartLegend').innerHTML = series.map(x => `<span><i style="background:${x.color}"></i>${x.label}</span>`).join('');
+  const first = s[0].d, last = s[s.length - 1].d, b0 = first - 3, b1 = last + 3;
+  const svg = $('chartSvg'), H = Math.round(Math.min(window.innerHeight * .5, 380));
+  let ctx = null;
+  zoom = new TimeZoom(svg, {
+    minSpan: M.minSpan, tip: $('chartTip'),
+    bounds: () => [b0, b1],
+    defaultView: () => [Math.max(b0, b1 - M.def), b1],
+    render: (view, W) => { ctx = plotTime(svg, W, H, view, series, { yFmt: v => v.toFixed(Number.isInteger(v) ? 0 : 1), xTicks: dateTicks }); window.__chartView = view; window.__chartY = [ctx.lo.toFixed(2), ctx.hi.toFixed(2)]; },
+    hit: (x, y) => {
+      if (!ctx) return null;
+      let best = null;
+      for (const p of series[0].pts) { const dx = Math.abs(ctx.X(p[0]) - x); if (dx < 24 && (!best || dx < best.dx)) best = { dx, p }; }
+      if (!best) return null;
+      const t = best.p[0], lines = series.map(sr => { const q = sr.pts.find(v => v[0] === t); return q ? `${sr.label} ${q[1].toFixed(2)} ${unit}` : null; }).filter(Boolean);
+      return { x: ctx.X(t), y: ctx.Y(best.p[1]), text: `${C.isoOf(t)}\n${lines.join('\n')}` };
+    },
+  });
+  zoom.reset();
+}
+
+function renderCorr(body) {
+  const since = chartSt.range === '1y' ? C.isoOf(C.dn(todayIso()) - 365) : undefined;
+  const pts = C.pairs(state.records, since), reg = C.linreg(pts);
+  body.innerHTML = `<div class="seg" id="corrRange" style="margin-top:10px"><button data-r="all">전체</button><button data-r="1y">최근 1년</button></div>
+    <div class="corrstats">${reg ? `<span><b>r = ${reg.r.toFixed(2)}</b><small>상관계수</small></span><span><b>${reg.slope.toFixed(2)} cm/kg</b><small>체중 1kg당 허리둘레</small></span>` : ''}<span><b>${pts.length}개</b><small>체중·허리둘레를 같은 날 잰 기록</small></span></div>
+    <div class="chart"><svg id="chartSvg"></svg><div class="tip" id="chartTip"></div></div>
+    <p class="hint">가로는 체중, 세로는 허리둘레입니다. 점이 진할수록 최근 기록입니다. 점을 탭하면 날짜와 값이 보입니다.</p>`;
+  body.querySelectorAll('#corrRange button').forEach(b => { b.classList.toggle('on', b.dataset.r === chartSt.range); b.onclick = () => { chartSt.range = b.dataset.r; renderChart(); }; });
+  const svg = $('chartSvg'), tip = $('chartTip');
+  if (pts.length < 2) { body.querySelector('.chart').innerHTML = '<p class="empty">체중과 허리둘레를 같은 날 잰 기록이 2개 이상 필요합니다.</p>'; return; }
+  const draw = () => {
+    if (!svg.isConnected) return;
+    const W = svg.clientWidth || 360, H = Math.round(Math.min(W * .9, 380)), x0 = PAD.l + 34, x1 = W - 12, y0 = PAD.t, y1 = H - PAD.b - 10;
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    const xr = niceTicks(Math.min(...xs) - .5, Math.max(...xs) + .5, 5), yr = niceTicks(Math.min(...ys) - .5, Math.max(...ys) + .5, 5);
+    const xlo = Math.min(...xs) - .5, xhi = Math.max(...xs) + .5, ylo = Math.min(...ys) - .5, yhi = Math.max(...ys) + .5;
+    const X = v => x0 + (v - xlo) / (xhi - xlo) * (x1 - x0), Y = v => y1 - (v - ylo) / (yhi - ylo) * (y1 - y0);
+    const d0 = pts[0].d, d1 = pts[pts.length - 1].d || d0 + 1;
+    let g = xr.ticks.map(v => `<line x1="${X(v)}" x2="${X(v)}" y1="${y0}" y2="${y1}" stroke="${COL.grid}"/><text x="${X(v)}" y="${y1 + 16}" text-anchor="middle" fill="${COL.label}" font-size="11">${v}</text>`).join('');
+    g += yr.ticks.map(v => `<line x1="${x0}" x2="${x1}" y1="${Y(v)}" y2="${Y(v)}" stroke="${COL.grid}"/><text x="${x0 - 6}" y="${Y(v) + 4}" text-anchor="end" fill="${COL.label}" font-size="11">${v}</text>`).join('');
+    g += `<text x="${x1}" y="${H - 4}" text-anchor="end" fill="${COL.label}" font-size="11">체중 kg</text>`;
+    g += pts.map(p => { const a = (p.d - d0) / Math.max(1, d1 - d0); return `<circle cx="${X(p.x).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="3.2" fill="${COL.waist}" fill-opacity="${(.15 + .85 * a).toFixed(2)}"/>`; }).join('');
+    if (reg) g += `<line x1="${X(xlo)}" y1="${Y(reg.intercept + reg.slope * xlo)}" x2="${X(xhi)}" y2="${Y(reg.intercept + reg.slope * xhi)}" stroke="${COL.weight}" stroke-width="2" stroke-dasharray="6 5"/>`;
+    g += `<text x="${x0 + 4}" y="${y0 + 12}" fill="${COL.label}" font-size="11">허리둘레 cm</text>`;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H); svg.innerHTML = g;
+    svg.onclick = e => {
+      const r = svg.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+      let best = null; for (const p of pts) { const dd = Math.hypot(X(p.x) - mx, Y(p.y) - my); if (dd < 20 && (!best || dd < best.dd)) best = { dd, p }; }
+      if (!best) { tip.style.display = 'none'; return; }
+      tip.textContent = `${C.isoOf(best.p.d)}\n체중 ${best.p.x.toFixed(1)} kg · 허리둘레 ${best.p.y.toFixed(1)} cm`; tip.style.display = 'block';
+      tip.style.left = Math.min(W - tip.offsetWidth - 2, Math.max(2, X(best.p.x) - tip.offsetWidth / 2)) + 'px';
+      tip.style.top = Math.max(0, Y(best.p.y) - tip.offsetHeight - 12) + 'px';
+    };
+  };
+  requestAnimationFrame(draw);
 }
 function renderGlp() { $('glpBody').innerHTML = ''; }
 
