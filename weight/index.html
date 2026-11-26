@@ -217,6 +217,10 @@ nav button.on svg{stroke:var(--weight)}
   <p class="note">불러오기: 같은 날짜가 있으면 파일에 있는 값으로 덮어씁니다. 파일에 없는 칸은 지금 값을 그대로 둡니다.</p>
   <p class="note">내보내기: 날짜·체중·허리둘레·메모를 CSV 파일로 저장합니다. 엑셀이나 구글 시트에서 열 수 있습니다.</p>
   <p class="note">모든 기록은 이 폰의 브라우저에만 저장되고 어디로도 전송되지 않습니다.</p>
+
+  <h2>초기화</h2>
+  <button class="btn danger" id="resetBtn" style="width:100%">모든 기록 삭제</button>
+  <p class="note">기록 전체와 내 정보(키·생년월일·성별·투약 설정)를 지우고 처음 상태로 돌립니다. 되돌릴 수 없으니 먼저 내보내기로 백업하세요.</p>
 </section>
 
 <nav>
@@ -423,6 +427,17 @@ $('exportBtn').addEventListener('click', () => {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   toast(`기록 ${state.records.length}일을 CSV로 내보냈습니다.`);
+});
+
+$('resetBtn').addEventListener('click', () => {
+  const ans = prompt(`기록 ${state.records.length}일과 내 정보를 모두 지웁니다. 되돌릴 수 없습니다.\n먼저 내보내기로 백업했는지 확인하세요.\n\n계속하려면 '초기화'라고 입력하세요.`);
+  if (ans === null) return;
+  if (ans.trim() !== '초기화') return toast("'초기화'라고 입력하지 않아 지우지 않았습니다.");
+  localStorage.removeItem(KEY);
+  state.records = []; state.profile = {};
+  clearInputs(); setMsg('');
+  render();
+  toast('모든 기록과 내 정보를 지웠습니다.');
 });
 
 /* ===== 그래프 공통 ===== */
