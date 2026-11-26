@@ -1,6 +1,6 @@
 // 오프라인 캐시: 캐시 우선으로 즉시 표시하고, 온라인이면 백그라운드에서 최신본으로 갱신.
 // 앱을 수정해 배포할 때는 CACHE 이름의 숫자를 올린다.
-const CACHE = 'weight-tracker-v6';
+const CACHE = 'weight-tracker-v7';
 const ASSETS = ['./', './index.html', './core.js', './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

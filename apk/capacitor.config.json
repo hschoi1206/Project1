@@ -3,6 +3,7 @@
   "appName": "체중·허리 기록",
   "webDir": "www",
   "android": {
-    "backgroundColor": "#152027"
+    "backgroundColor": "#152027",
+    "adjustMarginsForEdgeToEdge": "auto"
   }
 }
