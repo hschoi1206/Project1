@@ -73,7 +73,39 @@
     return null;
   }
 
-  const WTCore = { dn, isoOf, dow, parseNum, series, rolling, weekly, monthly, sma, changeOver };
+  /* ===== 상관 · BMI · 나이 ===== */
+  function pairs(records, sinceIso) {
+    const since = sinceIso ? dn(sinceIso) : -Infinity;
+    return records
+      .filter(r => r.weight != null && r.waist != null && dn(r.date) >= since)
+      .map(r => ({ d: dn(r.date), x: r.weight, y: r.waist }))
+      .sort((a, b) => a.d - b.d);
+  }
+
+  function linreg(pts) {
+    const n = pts.length;
+    if (n < 2) return null;
+    const mx = mean(pts.map(p => p.x)), my = mean(pts.map(p => p.y));
+    let sxx = 0, syy = 0, sxy = 0;
+    for (const p of pts) { sxx += (p.x - mx) ** 2; syy += (p.y - my) ** 2; sxy += (p.x - mx) * (p.y - my); }
+    if (!sxx) return null;
+    const slope = sxy / sxx;
+    return { slope, intercept: my - slope * mx, r: syy ? sxy / Math.sqrt(sxx * syy) : 0, n };
+  }
+
+  const bmi = (w, h) => (w && h ? Math.round(w / (h / 100) ** 2 * 10) / 10 : null);
+  // 대한비만학회 기준
+  const bmiClass = b => b < 18.5 ? '저체중' : b < 23 ? '정상' : b < 25 ? '비만 전단계'
+    : b < 30 ? '1단계 비만' : b < 35 ? '2단계 비만' : '3단계 비만';
+
+  function ageOn(birthIso, todayIso) {
+    if (!birthIso) return null;
+    const [by, bm, bd] = birthIso.split('-').map(Number), [ty, tm, td] = todayIso.split('-').map(Number);
+    return ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0);
+  }
+
+  const WTCore = { dn, isoOf, dow, parseNum, series, rolling, weekly, monthly, sma, changeOver,
+    pairs, linreg, bmi, bmiClass, ageOn };
   if (typeof module !== 'undefined' && module.exports) module.exports = WTCore;
   else g.WTCore = WTCore;
 })(typeof self !== 'undefined' ? self : globalThis);
