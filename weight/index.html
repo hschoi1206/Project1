@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#152027">
+<title>체중·허리 기록</title>
+<style>
+:root{
+  --bg:#152027;--surface:#1c2a32;--raise:#243641;--line:#2f424e;
+  --text:#e6edef;--muted:#8fa3ac;--weight:#8fd4bf;--waist:#f0c74a;--danger:#ff8f80;
+  --blue:#7aa7ff;--violet:#b49cff;--placebo:#8c9ca4;
+  --font:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",Roboto,sans-serif;
+  --nav:64px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 var(--font);-webkit-tap-highlight-color:transparent}
+body{padding-bottom:calc(var(--nav) + env(safe-area-inset-bottom))}
+button,input,select{font:inherit;color:inherit}
+.num{font-variant-numeric:tabular-nums}
+.view{padding:20px 18px 28px;max-width:560px;margin:0 auto}
+.hidden{display:none!important}
+h1{font-size:22px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
+h2{font-size:15px;font-weight:600;color:var(--muted);margin:28px 0 10px}
+.sub{color:var(--muted);font-size:14px;margin:0}
+.empty{color:var(--muted);padding:40px 0;text-align:center}
+
+/* 홈: 측정 입력 — 줄자 눈금 */
+.datebar{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.datebar input{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px;color-scheme:dark}
+.measures{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.measure{background:var(--surface);border-radius:14px;padding:14px 14px 0;overflow:hidden;position:relative}
+.measure label{display:block;font-size:14px;color:var(--muted)}
+.measure .field{display:flex;align-items:baseline;gap:4px}
+.measure input{width:100%;background:none;border:0;outline:0;font-size:40px;font-weight:700;padding:2px 0 8px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.measure input::placeholder{color:#4a5d68}
+.measure .unit{color:var(--muted);font-size:15px}
+.measure .tape{height:14px;margin:0 -14px;background:
+  repeating-linear-gradient(90deg,var(--c) 0 1px,transparent 1px 8px) bottom/100% 7px no-repeat,
+  repeating-linear-gradient(90deg,var(--c) 0 1.5px,transparent 1.5px 40px) bottom/100% 14px no-repeat;opacity:.55}
+.measure:focus-within .tape{opacity:1}
+.m-weight{--c:var(--weight)} .m-waist{--c:var(--waist)}
+.m-weight input{caret-color:var(--weight)} .m-waist input{caret-color:var(--waist)}
+.memo{margin-top:12px;width:100%;background:var(--surface);border:1px solid transparent;border-radius:12px;padding:12px 14px}
+.memo:focus{outline:0;border-color:var(--line)}
+.actions{display:flex;gap:10px;margin-top:14px}
+.btn{border:0;border-radius:12px;padding:13px 18px;font-weight:600;background:var(--raise);cursor:pointer}
+.btn.primary{flex:1;background:var(--weight);color:#102019}
+.btn.danger{background:none;color:var(--danger);border:1px solid #5a3a37}
+.btn:focus-visible,.seg button:focus-visible,nav button:focus-visible{outline:2px solid var(--waist);outline-offset:2px}
+#msg{min-height:22px;margin:10px 2px 0;font-size:14px;color:var(--danger)}
+#msg.ok{color:var(--weight)}
+
+.summary{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.summary th,.summary td{padding:9px 4px;text-align:right;border-bottom:1px solid var(--line);font-weight:400}
+.summary th:first-child,.summary td:first-child{text-align:left;color:var(--muted)}
+.summary thead th{color:var(--muted);font-size:13px}
+.summary .now td{font-size:20px;font-weight:700;color:var(--text)}
+.summary .now td:first-child{font-size:14px;font-weight:400;color:var(--muted)}
+.dn{color:var(--weight)} .up{color:var(--danger)}
+
+/* 기록 */
+.month{position:sticky;top:0;background:var(--bg);color:var(--muted);font-size:13px;padding:14px 2px 6px}
+.row{display:grid;grid-template-columns:62px 64px 64px 1fr;gap:6px;align-items:baseline;padding:11px 2px;border-bottom:1px solid var(--line);cursor:pointer;font-variant-numeric:tabular-nums}
+.row .d{color:var(--muted);font-size:14px}
+.row .d.sun{color:#ff9c8f} .row .d.sat{color:#8fb6ff}
+.row .w{color:var(--weight);font-weight:600} .row .ws{color:var(--waist)}
+.row .m{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 내 정보 */
+.form{display:grid;gap:2px;background:var(--surface);border-radius:14px;overflow:hidden}
+.form .f{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:var(--surface)}
+.form .f+.f{border-top:1px solid var(--line)}
+.form .f span{color:var(--muted)}
+.form input,.form select{background:none;border:0;text-align:right;color-scheme:dark;max-width:60%}
+.form input:focus,.form select:focus{outline:0;color:var(--waist)}
+.bmi{display:flex;align-items:baseline;gap:10px;margin-top:12px;padding:14px;border-radius:14px;background:var(--surface)}
+.bmi b{font-size:30px;font-variant-numeric:tabular-nums}
+.bmi small{color:var(--muted)}
+.switch{position:relative;width:46px;height:28px;flex:none}
+.switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;max-width:none;z-index:1}
+.switch i{position:absolute;inset:0;border-radius:14px;background:var(--line);transition:background .15s}
+.switch i::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--text);transition:transform .15s}
+.switch input:checked+i{background:var(--weight)}
+.switch input:checked+i::after{transform:translateX(18px)}
+.switch input:focus-visible+i{outline:2px solid var(--waist);outline-offset:2px}
+.backup{display:grid;gap:8px}
+.backup label.btn{display:block;text-align:left}
+.backup input[type=file]{display:none}
+.note{color:var(--muted);font-size:13px;margin:8px 2px 0}
+
+/* 차트 공통 */
+.seg{display:flex;background:var(--surface);border-radius:12px;padding:3px;gap:2px}
+.seg button{flex:1;border:0;background:none;padding:8px 0;border-radius:9px;color:var(--muted);cursor:pointer}
+.seg button.on{background:var(--raise);color:var(--text);font-weight:600}
+.chart{position:relative;margin-top:12px}
+.chart svg{display:block;width:100%;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.tip{position:absolute;pointer-events:none;background:rgba(10,16,20,.94);border:1px solid var(--line);color:var(--text);font-size:13px;line-height:1.45;padding:6px 9px;border-radius:8px;white-space:pre-line;display:none;z-index:2}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:10px;font-size:13px;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
+.hint{color:var(--muted);font-size:12px;margin-top:8px}
+
+/* 하단 탭 */
+nav{position:fixed;left:0;right:0;bottom:0;height:calc(var(--nav) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);display:flex;background:var(--surface);border-top:1px solid var(--line);z-index:10}
+nav button{flex:1;border:0;background:none;color:var(--muted);font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer}
+nav button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+nav button.on{color:var(--text)}
+nav button.on svg{stroke:var(--weight)}
+
+#toast{position:fixed;left:50%;bottom:calc(var(--nav) + 16px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--raise);border:1px solid var(--line);color:var(--text);padding:10px 16px;border-radius:12px;font-size:14px;max-width:90vw;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+#toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<section id="view-home" class="view">
+  <div class="datebar">
+    <h1 id="homeTitle">오늘</h1>
+    <input type="date" id="inDate" aria-label="날짜">
+  </div>
+  <div class="measures">
+    <div class="measure m-weight">
+      <label for="inWeight">체중</label>
+      <div class="field"><input id="inWeight" inputmode="decimal" placeholder="--.-" autocomplete="off"><span class="unit">kg</span></div>
+      <div class="tape"></div>
+    </div>
+    <div class="measure m-waist">
+      <label for="inWaist">허리둘레</label>
+      <div class="field"><input id="inWaist" inputmode="decimal" placeholder="--.-" autocomplete="off"><span class="unit">cm</span></div>
+      <div class="tape"></div>
+    </div>
+  </div>
+  <input id="inMemo" class="memo" placeholder="메모 (선택)" autocomplete="off">
+  <div class="actions">
+    <button class="btn primary" id="saveBtn">저장</button>
+    <button class="btn danger hidden" id="delBtn">삭제</button>
+  </div>
+  <p id="msg" role="status"></p>
+  <div id="homeSummary"></div>
+</section>
+
+<section id="view-log" class="view hidden">
+  <h1>기록</h1>
+  <p class="sub" id="logCount"></p>
+  <div id="logList"></div>
+</section>
+
+<section id="view-chart" class="view hidden">
+  <div class="seg" id="chartModes">
+    <button data-mode="day" class="on">일간</button><button data-mode="week">주간</button><button data-mode="month">월간</button><button data-mode="corr">상관</button>
+  </div>
+  <div id="chartBody"></div>
+</section>
+
+<section id="view-glp" class="view hidden">
+  <div id="glpBody"></div>
+</section>
+
+<section id="view-me" class="view hidden">
+  <h1>내 정보</h1>
+  <h2>신체 정보</h2>
+  <div class="form">
+    <div class="f"><span>키 (cm)</span><input id="height" inputmode="decimal" placeholder="입력"></div>
+    <div class="f"><span>생년월일</span><input id="birth" type="date"></div>
+    <div class="f"><span>성별</span><select id="sex"><option value="">선택</option><option value="male">남성</option><option value="female">여성</option></select></div>
+  </div>
+  <div class="bmi" id="bmiBox"></div>
+
+  <h2>다이어트 주사</h2>
+  <div class="form">
+    <div class="f"><span>위고비/마운자로 투약 중인가요?</span><label class="switch"><input type="checkbox" id="glpOn" aria-label="투약 중"><i></i></label></div>
+    <div class="f glp-f"><span>약</span><select id="glpDrug"><option value="wegovy">위고비</option><option value="mounjaro">마운자로</option></select></div>
+    <div class="f glp-f"><span>투약 시작일</span><input id="glpStart" type="date"></div>
+  </div>
+
+  <h2>백업</h2>
+  <div class="backup">
+    <label class="btn">합쳐서 불러오기 (.databody)<input type="file" id="importMerge" accept=".databody,application/gzip,application/octet-stream"></label>
+    <label class="btn">모두 바꿔 불러오기 (.databody)<input type="file" id="importReplace" accept=".databody,application/gzip,application/octet-stream"></label>
+    <button class="btn" id="exportBtn" style="text-align:left">내보내기 (.databody)</button>
+  </div>
+  <p class="note">내보낸 파일은 기존 체중 기록 앱 형식입니다. 이 앱은 체중·허리둘레·메모만 저장하므로, 기존 앱에 넣으면 음주·식단 기록은 빠진 상태가 됩니다.</p>
+  <p class="note">모든 기록은 이 폰의 브라우저에만 저장되고 어디로도 전송되지 않습니다.</p>
+</section>
+
+<nav>
+  <button data-tab="home"><svg viewBox="0 0 24 24"><path d="M4 11l8-6 8 6v8H4z"/><path d="M10 19v-5h4v5"/></svg>홈</button>
+  <button data-tab="log"><svg viewBox="0 0 24 24"><path d="M6 5h12M6 10h12M6 15h12M6 20h7"/></svg>기록</button>
+  <button data-tab="chart"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 3 7-9"/></svg>차트</button>
+  <button data-tab="glp" class="hidden"><svg viewBox="0 0 24 24"><path d="M14 4l6 6M17 7l-9 9-3 1 1-3 9-9M9 12l3 3"/></svg>투약 비교</button>
+  <button data-tab="me"><svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="3.5"/><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"/></svg>내 정보</button>
+</nav>
+<div id="toast" role="status"></div>
+
+<script src="core.js"></script>
+<script>
+'use strict';
+const C = window.WTCore;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const WK = '일월화수목금토';
+const f1 = v => (v == null ? '-' : v.toFixed(1));
+const todayIso = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
+
+/* ===== 저장소 ===== */
+const KEY = 'weightTracker.v1';
+const state = { records: [], profile: {} };
+function load() {
+  try {
+    const o = JSON.parse(localStorage.getItem(KEY) || '{}');
+    state.records = Array.isArray(o.records) ? o.records.filter(r => r && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) : [];
+    state.profile = o.profile && typeof o.profile === 'object' ? o.profile : {};
+  } catch (e) { state.records = []; state.profile = {}; }
+  state.records.sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+function save() { localStorage.setItem(KEY, JSON.stringify({ version: 1, records: state.records, profile: state.profile })); }
+const recOf = date => state.records.find(r => r.date === date);
+
+let toastT = 0;
+function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 3200); }
+
+/* ===== 탭 ===== */
+let current = 'home';
+const glpEnabled = () => !!state.profile.glp1?.enabled;
+function show(tab) {
+  if (tab === 'glp' && !glpEnabled()) tab = 'home';
+  current = tab;
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('hidden', v.id !== 'view-' + tab));
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  render();
+}
+function render() {
+  document.querySelector('nav [data-tab="glp"]').classList.toggle('hidden', !glpEnabled());
+  ({ home: renderHome, log: renderLog, chart: renderChart, glp: renderGlp, me: renderMe })[current]();
+}
+document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => show(b.dataset.tab)));
+
+/* ===== 홈 ===== */
+function fillEntry(date) {
+  $('inDate').value = date;
+  const r = recOf(date);
+  $('inWeight').value = r?.weight != null ? r.weight.toFixed(1) : '';
+  $('inWaist').value = r?.waist != null ? r.waist.toFixed(1) : '';
+  $('inMemo').value = r?.memo || '';
+  $('delBtn').classList.toggle('hidden', !r);
+  const d = new Date(date + 'T00:00');
+  $('homeTitle').textContent = date === todayIso() ? '오늘' : `${d.getMonth() + 1}월 ${d.getDate()}일 ${WK[d.getDay()]}요일`;
+}
+function setMsg(t, ok) { $('msg').textContent = t; $('msg').classList.toggle('ok', !!ok); }
+$('inDate').addEventListener('change', () => { if ($('inDate').value) { fillEntry($('inDate').value); setMsg(''); } });
+
+$('saveBtn').addEventListener('click', () => {
+  const date = $('inDate').value;
+  if (!date) return setMsg('날짜를 고르세요.');
+  const weight = C.parseNum($('inWeight').value, 'weight');
+  const waist = C.parseNum($('inWaist').value, 'waist');
+  const memo = $('inMemo').value.trim();
+  if (weight === undefined) return setMsg('체중은 20–300 kg 사이 숫자로 입력하세요.');
+  if (waist === undefined) return setMsg('허리둘레는 40–200 cm 사이 숫자로 입력하세요.');
+  if (waist == null && /^\d+([.,]\d+)?$/.test(memo)) return setMsg('허리둘레는 메모가 아니라 허리둘레 칸에 입력하세요.');
+  if (weight == null && waist == null && !memo) return setMsg('체중이나 허리둘레를 입력하세요.');
+  const r = recOf(date);
+  if (r) Object.assign(r, { weight, waist, memo });
+  else { state.records.push({ id: C.newId(), date, weight, waist, memo }); state.records.sort((a, b) => (a.date < b.date ? -1 : 1)); }
+  save();
+  setMsg('저장했습니다.', true);
+  renderHome(true);
+});
+$('delBtn').addEventListener('click', () => {
+  const date = $('inDate').value;
+  if (!recOf(date) || !confirm(`${date} 기록을 삭제할까요?`)) return;
+  state.records = state.records.filter(r => r.date !== date);
+  save();
+  setMsg('삭제했습니다.', true);
+  renderHome(true);
+});
+
+function renderHome(keepEntry) {
+  if (keepEntry !== true) { fillEntry($('inDate').value || todayIso()); setMsg(''); }
+  else $('delBtn').classList.toggle('hidden', !recOf($('inDate').value));
+  const sw = C.series(state.records, 'weight'), sz = C.series(state.records, 'waist');
+  if (!sw.length && !sz.length) { $('homeSummary').innerHTML = '<p class="empty">아직 기록이 없습니다. 오늘 체중부터 입력해 보세요.</p>'; return; }
+  const lastW = sw[sw.length - 1], lastZ = sz[sz.length - 1];
+  const ch = v => (v == null ? '<td>-</td>' : `<td class="${v < 0 ? 'dn' : v > 0 ? 'up' : ''}">${v > 0 ? '+' : ''}${v.toFixed(1)}</td>`);
+  const when = p => (p ? C.isoOf(p.d).slice(5).replace('-', '.') : '');
+  $('homeSummary').innerHTML = `<h2>변화</h2><table class="summary">
+    <thead><tr><th></th><th>체중 kg</th><th>허리둘레 cm</th></tr></thead>
+    <tbody><tr class="now"><td>최근</td><td>${f1(lastW?.v)}</td><td>${f1(lastZ?.v)}</td></tr>
+    <tr><td>기준일</td><td class="sub">${when(lastW)}</td><td class="sub">${when(lastZ)}</td></tr>
+    ${[[7, '7일'], [30, '30일'], [365, '365일']].map(([d, l]) => `<tr><td>${l}</td>${ch(C.changeOver(sw, d))}${ch(C.changeOver(sz, d))}</tr>`).join('')}
+    </tbody></table>`;
+}
+
+/* ===== 기록 ===== */
+function renderLog() {
+  const rs = state.records;
+  $('logCount').textContent = rs.length ? `${rs.length}일 기록` : '';
+  if (!rs.length) { $('logList').innerHTML = '<p class="empty">기록이 없습니다. 홈에서 첫 기록을 입력하세요.</p>'; return; }
+  let html = '', month = '';
+  for (let i = rs.length - 1; i >= 0; i--) {
+    const r = rs[i], m = r.date.slice(0, 7);
+    if (m !== month) { month = m; html += `<div class="month">${m.slice(0, 4)}년 ${+m.slice(5)}월</div>`; }
+    const dw = new Date(r.date + 'T00:00').getDay();
+    html += `<div class="row" data-date="${r.date}"><span class="d ${dw === 0 ? 'sun' : dw === 6 ? 'sat' : ''}">${+r.date.slice(8)}일 ${WK[dw]}</span><span class="w">${r.weight != null ? r.weight.toFixed(1) : ''}</span><span class="ws">${r.waist != null ? r.waist.toFixed(1) : ''}</span><span class="m">${esc(r.memo)}</span></div>`;
+  }
+  $('logList').innerHTML = html;
+}
+$('logList').addEventListener('click', e => {
+  const row = e.target.closest('.row'); if (!row) return;
+  $('inDate').value = row.dataset.date;
+  show('home');
+});
+
+/* ===== 내 정보 ===== */
+function renderMe() {
+  const p = state.profile, g = p.glp1 || {};
+  $('height').value = p.heightCm ?? '';
+  $('birth').value = p.birthDate || '';
+  $('sex').value = p.sex || '';
+  $('glpOn').checked = !!g.enabled;
+  $('glpDrug').value = g.drug || 'wegovy';
+  $('glpStart').value = g.startDate || '';
+  document.querySelectorAll('.glp-f').forEach(el => el.classList.toggle('hidden', !g.enabled));
+  const sw = C.series(state.records, 'weight'), last = sw[sw.length - 1];
+  const b = C.bmi(last?.v, p.heightCm), age = C.ageOn(p.birthDate, todayIso());
+  $('bmiBox').innerHTML = b
+    ? `<b>${b.toFixed(1)}</b><span>BMI · ${C.bmiClass(b)}</span><small style="margin-left:auto">${last.v.toFixed(1)} kg 기준${age != null ? ` · ${age}세` : ''}</small>`
+    : `<small>키와 체중을 입력하면 BMI를 계산합니다${age != null ? ` · ${age}세` : ''}</small>`;
+}
+function updProfile(fn) { fn(state.profile); save(); render(); }
+$('height').addEventListener('change', () => {
+  const v = parseFloat($('height').value.replace(',', '.'));
+  updProfile(p => { if (v >= 80 && v <= 250) p.heightCm = v; else { delete p.heightCm; if ($('height').value) toast('키는 80–250 cm 사이로 입력하세요.'); } });
+});
+$('birth').addEventListener('change', () => updProfile(p => { p.birthDate = $('birth').value || undefined; }));
+$('sex').addEventListener('change', () => updProfile(p => { p.sex = $('sex').value || undefined; }));
+const glpUpd = () => updProfile(p => { p.glp1 = { enabled: $('glpOn').checked, drug: $('glpDrug').value, startDate: $('glpStart').value || '' }; });
+['glpOn', 'glpDrug', 'glpStart'].forEach(id => $(id).addEventListener('change', glpUpd));
+
+/* ===== 백업 ===== */
+async function importFile(input, mode) {
+  const file = input.files[0]; input.value = '';
+  if (!file) return;
+  try {
+    const text = await C.gunzipToText(new Uint8Array(await file.arrayBuffer()));
+    const { records, profile, stats } = C.parseDatabody(JSON.parse(text));
+    if (mode === 'replace' && !confirm(`지금 기록 ${state.records.length}일을 모두 지우고 파일 내용으로 바꿀까요?`)) return;
+    state.records = C.mergeRecords(state.records, records, mode);
+    for (const k of ['heightCm', 'birthDate', 'sex']) if (state.profile[k] == null && profile[k] != null) state.profile[k] = profile[k];
+    save(); render();
+    toast(`체중 ${stats.weights}건, 허리둘레 ${stats.waists}건, 메모 ${stats.memos}건을 불러왔습니다.${stats.dupDropped ? ` (같은 날짜 중복 ${stats.dupDropped}건 제외)` : ''}`);
+  } catch (e) {
+    toast('파일을 불러오지 못했습니다. 기존 체중 앱에서 내보낸 .databody 파일인지 확인하세요. 기존 기록은 그대로입니다.');
+  }
+}
+$('importMerge').addEventListener('change', e => importFile(e.target, 'merge'));
+$('importReplace').addEventListener('change', e => importFile(e.target, 'replace'));
+$('exportBtn').addEventListener('click', async () => {
+  if (!state.records.length) return toast('내보낼 기록이 없습니다.');
+  const gz = await C.gzipText(JSON.stringify(C.buildDatabody(state.records, state.profile, Date.now())));
+  const t = new Date(), p = n => String(n).padStart(2, '0');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([gz], { type: 'application/octet-stream' }));
+  a.download = `${todayIso()}_${p(t.getHours())}${p(t.getMinutes())}.databody`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast(`기록 ${state.records.length}일을 내보냈습니다.`);
+});
+
+/* ===== 차트 · 투약 비교 (다음 단계에서 구현) ===== */
+function renderChart() {
+  if (!state.records.length) { $('chartBody').innerHTML = '<p class="empty">기록이 없습니다. 기록이 쌓이면 그래프가 그려집니다.</p>'; return; }
+  $('chartBody').innerHTML = '';
+}
+function renderGlp() { $('glpBody').innerHTML = ''; }
+
+/* ===== 시작 ===== */
+load();
+navigator.storage?.persist?.();
+show('home');
+</script>
+</body>
+</html>
