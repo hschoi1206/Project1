@@ -104,6 +104,13 @@ h2{font-size:15px;font-weight:600;color:var(--muted);margin:28px 0 10px}
 .corrstats b{font-size:20px;font-variant-numeric:tabular-nums}
 .corrstats small{color:var(--muted);font-size:12px}
 
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.card{background:var(--surface);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.card span{color:var(--muted);font-size:13px}
+.card span i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
+.card b{font-size:26px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.card small{color:var(--muted);font-size:12px}
+.card.me b{color:var(--weight)}
 /* 하단 탭 */
 nav{position:fixed;left:0;right:0;bottom:0;height:calc(var(--nav) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);display:flex;background:var(--surface);border-top:1px solid var(--line);z-index:10}
 nav button{flex:1;border:0;background:none;color:var(--muted);font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer}
@@ -575,7 +582,57 @@ function renderCorr(body) {
   };
   requestAnimationFrame(draw);
 }
-function renderGlp() { $('glpBody').innerHTML = ''; }
+/* ===== 투약 비교 탭 ===== */
+let glpZoom = 'all';
+function renderGlp() {
+  const body = $('glpBody'), g = state.profile.glp1 || {}, drug = C.CLINICAL[g.drug] ? g.drug : 'wegovy', D = C.CLINICAL[drug];
+  const name = drug === 'wegovy' ? '위고비' : '마운자로';
+  const head = `<h1>${name} 투약 후 체중 변화</h1>`;
+  if (!g.startDate) { body.innerHTML = `${head}<p class="empty">내 정보에서 투약 시작일을 입력하세요.</p>`; return; }
+  const today = todayIso(), s = C.glp1Series(state.records, g.startDate, today);
+  const msgs = {
+    future: '투약 시작일이 아직 지나지 않았습니다. 시작일이 지나고 체중을 기록하면 비교가 표시됩니다.',
+    noBaseline: '시작일 무렵 체중 기록이 필요합니다. 시작일이나 그 전 14일 안의 체중을 기록하세요.',
+    noData: '시작일 이후 체중 기록이 쌓이면 임상 결과와 비교해 보여 드립니다.',
+  };
+  if (s.status !== 'ok') { body.innerHTML = `${head}<p class="sub">투약 시작일 ${g.startDate}</p><p class="empty">${msgs[s.status]}</p>`; return; }
+  const last = s.points[s.points.length - 1], wk = last.week;
+  const fmtPct = v => (v == null ? '-' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}%`);
+  const cards = [`<div class="card me"><span><i style="background:${COL.weight}"></i>나 (${wk.toFixed(1)}주차)</span><b>${fmtPct(last.pct)}</b><small>${(last.weight - s.base.weight).toFixed(1)} kg · 현재 ${last.weight.toFixed(1)} kg</small></div>`]
+    .concat(D.arms.map(a => { const v = C.interp(a.pts, wk); return `<div class="card"><span><i style="background:${a.color}"></i>${a.label}</span><b>${fmtPct(v)}</b><small>${v == null ? '임상 기간 이후' : `같은 주차 · 나와 ${(last.pct - v) > 0 ? '+' : '−'}${Math.abs(last.pct - v).toFixed(1)}%p`}</small></div>`; }));
+  body.innerHTML = `${head}<p class="sub">기준 ${g.startDate.slice(5).replace('-', '.')} ${s.base.weight.toFixed(1)} kg → ${C.isoOf(last.d).slice(5).replace('-', '.')} (${Math.round(wk * 7)}일째)</p>
+    <div class="cards" id="glpCards">${cards.join('')}</div>
+    <div class="seg" id="glpZoom" style="margin-top:16px"><button data-z="all">전체 ${D.weeks}주</button><button data-z="mine">내 구간 확대</button></div>
+    <div class="legend" id="glpLegend"><span><i style="background:${COL.weight}"></i>나 (일별 실측)</span>${D.arms.map(a => `<span><i style="background:${a.color}"></i>${a.label} 평균</span>`).join('')}</div>
+    <div class="chart"><svg id="glpSvg"></svg><div class="tip" id="glpTip"></div></div>
+    <p class="hint">가로는 투약 시작 후 경과 주, 세로는 시작 체중 대비 변화율입니다. 점을 탭하면 값이 보입니다.</p>
+    <p class="note">임상시험 평균과의 참고 비교이며 의학적 판단 근거가 아닙니다. 임상 중간 주차 값은 논문 그래프에서 읽은 근사값입니다.<br>출처: ${esc(D.source)}</p>`;
+  body.querySelectorAll('#glpZoom button').forEach(b => { b.classList.toggle('on', b.dataset.z === glpZoom); b.onclick = () => { glpZoom = b.dataset.z; renderGlp(); }; });
+  const series = [...D.arms.map(a => ({ pts: a.pts, color: a.color, width: 2, endLabel: `${a.key === 'placebo' ? '위약' : a.label.split(' ')[1]} ${fmtPct(C.interp(a.pts, glpZoom === 'mine' ? Math.min(D.weeks, Math.max(2, Math.ceil(wk + .5))) : D.weeks))}` })),
+    { pts: s.points.map(p => [p.week, p.pct]), color: COL.weight, width: 2, dots: 2.2, endLabel: `나 ${fmtPct(last.pct)}` }];
+  const svg = $('glpSvg'), tip = $('glpTip');
+  const view = glpZoom === 'mine' ? [0, Math.max(2, Math.ceil(wk + .5))] : [0, Math.max(D.weeks, Math.ceil(wk))];
+  const draw = () => {
+    if (!svg.isConnected) return;
+    const W = svg.clientWidth || 360, H = Math.round(Math.min(window.innerHeight * .5, 380));
+    const step = view[1] <= 12 ? 1 : 10;
+    const ctx = plotTime(svg, W, H, view, series, {
+      yInclude: [0], endLabels: true, yFmt: v => `${v}%`,
+      xTicks: (t0, t1) => { const out = []; for (let w = 0; w <= t1; w += step) out.push([w, w === 0 ? '0' : `${w}`]); out.push([t1, `${t1}주`]); return out.filter((x, i, a) => i === a.length - 1 || t1 - x[0] > (t1 - t0) * .08); },
+    });
+    svg.onclick = e => {
+      const r = svg.getBoundingClientRect(), mx = e.clientX - r.left;
+      let best = null; for (const p of s.points) { const dx = Math.abs(ctx.X(p.week) - mx); if (dx < 24 && (!best || dx < best.dx)) best = { dx, p }; }
+      if (!best) { tip.style.display = 'none'; return; }
+      const p = best.p;
+      tip.textContent = `${C.isoOf(p.d)} (${p.week.toFixed(1)}주)\n나 ${fmtPct(p.pct)} · ${p.weight.toFixed(1)} kg\n` + D.arms.map(a => `${a.label} ${fmtPct(C.interp(a.pts, p.week))}`).join('\n');
+      tip.style.display = 'block';
+      tip.style.left = Math.min(W - tip.offsetWidth - 2, Math.max(2, ctx.X(p.week) - tip.offsetWidth / 2)) + 'px';
+      tip.style.top = Math.max(0, ctx.Y(p.pct) - tip.offsetHeight - 12) + 'px';
+    };
+  };
+  requestAnimationFrame(draw);
+}
 
 /* ===== 시작 ===== */
 load();
