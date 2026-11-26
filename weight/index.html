@@ -251,7 +251,10 @@ function render() {
 document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => show(b.dataset.tab)));
 
 /* ===== 홈 ===== */
+// 입력칸이 '그날의 오늘'로 채워졌는지 기억해 두고, 날짜가 바뀐 뒤 앱으로 돌아오면 새 오늘로 바꾼다.
+let entryToday = '';
 function fillEntry(date) {
+  entryToday = date === todayIso() ? date : '';
   $('inDate').value = date;
   const r = recOf(date);
   $('inWeight').value = r?.weight != null ? r.weight.toFixed(1) : '';
@@ -262,6 +265,7 @@ function fillEntry(date) {
   $('homeTitle').textContent = date === todayIso() ? '오늘' : `${d.getMonth() + 1}월 ${d.getDate()}일 ${WK[d.getDay()]}요일`;
 }
 function setMsg(t, ok) { $('msg').textContent = t; $('msg').classList.toggle('ok', !!ok); }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && current === 'home') renderHome(true); });
 $('inDate').addEventListener('change', () => { if ($('inDate').value) { fillEntry($('inDate').value); setMsg(''); } });
 
 $('saveBtn').addEventListener('click', () => {
@@ -291,7 +295,8 @@ $('delBtn').addEventListener('click', () => {
 });
 
 function renderHome(keepEntry) {
-  if (keepEntry !== true) { fillEntry($('inDate').value || todayIso()); setMsg(''); }
+  const stale = entryToday && $('inDate').value === entryToday && entryToday !== todayIso();
+  if (keepEntry !== true || stale) { fillEntry(stale ? todayIso() : ($('inDate').value || todayIso())); setMsg(''); }
   else $('delBtn').classList.toggle('hidden', !recOf($('inDate').value));
   const sw = C.series(state.records, 'weight'), sz = C.series(state.records, 'waist');
   if (!sw.length && !sz.length) { $('homeSummary').innerHTML = '<p class="empty">아직 기록이 없습니다. 오늘 체중부터 입력해 보세요.</p>'; return; }

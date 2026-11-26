@@ -15,7 +15,7 @@ test('splitMemo pulls waist from numeric memos only', () => {
   assert.deepEqual(C.splitMemo('81.0 / 혼술'), { waist: 81, memo: '혼술' });
   assert.deepEqual(C.splitMemo('77 5'), { waist: null, memo: '77 5' });
   assert.deepEqual(C.splitMemo('혼술'), { waist: null, memo: '혼술' });
-  assert.deepEqual(C.splitMemo('200'), { waist: null, memo: '200' });
+  assert.deepEqual(C.splitMemo('250'), { waist: null, memo: '250' });
   assert.deepEqual(C.splitMemo(null), { waist: null, memo: '' });
 });
 
@@ -94,4 +94,11 @@ test('export then gzip then import round-trips the records', async () => {
 
 test('newId returns a uuid', () => {
   assert.match(C.newId(), /^[0-9a-f-]{36}$/);
+});
+
+test('waist values accepted by the entry form survive export and re-import', () => {
+  for (const w of [40, 45, 160, 200]) {
+    assert.deepEqual(C.splitMemo(C.joinMemo(w, '')), { waist: w, memo: '' });
+    assert.deepEqual(C.splitMemo(C.joinMemo(w, 'x')), { waist: w, memo: 'x' });
+  }
 });

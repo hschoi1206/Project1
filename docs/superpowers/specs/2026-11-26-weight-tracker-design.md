@@ -133,7 +133,7 @@
 |---|---|
 | `weights[].date` | `date` |
 | `weights[].weightInKg` | `weight` (`null` 허용. `unit`이 `null`인 기록은 `weightInKg`도 `null`임을 확인함) |
-| `weights[].memo`가 숫자만(`^\d{2,3}(\.\d+)?$`)이고 50–150 범위 | `waist` |
+| `weights[].memo`가 숫자만(`^\d{2,3}(\.\d+)?$`)이고 40–200 범위(입력 범위와 같음) | `waist` |
 | `숫자 / 글자` 형태의 메모 (예: `81.0 / 혼술`, 이 앱이 내보낸 형식) | 앞 숫자는 `waist`, `/` 뒤는 `memo` |
 | 그 밖의 메모 (예: `77 5`) | 손대지 않고 `memo`로 남김. 추측해서 고치지 않는다. |
 | `weights[].id` | `id` (내보낼 때 같은 id를 유지) |

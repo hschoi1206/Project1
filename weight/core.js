@@ -66,10 +66,11 @@
     });
   }
 
+  // 비교 기준점은 목표일 이전의 가장 가까운 기록. 목표일에서 너무 멀면(7일 3일, 30일 7일, 365일 30일 초과) 비교하지 않는다.
   function changeOver(s, days) {
     if (!s.length) return null;
-    const last = s[s.length - 1], target = last.d - days;
-    for (let i = s.length - 1; i >= 0; i--) if (s[i].d <= target) return last.v - s[i].v;
+    const last = s[s.length - 1], target = last.d - days, tol = days <= 7 ? 3 : days <= 30 ? 7 : 30;
+    for (let i = s.length - 1; i >= 0; i--) if (s[i].d <= target) return target - s[i].d <= tol ? last.v - s[i].v : null;
     return null;
   }
 
@@ -163,7 +164,7 @@
   /* ===== .databody 백업 (기존 앱 형식: gzip JSON) ===== */
   const WAIST_RE = /^\s*(\d{2,3}(?:\.\d+)?)\s*$/;
   const WAIST_MEMO_RE = /^\s*(\d{2,3}(?:\.\d+)?)\s*\/\s*(.*)$/s;
-  const waistOk = v => v >= 50 && v <= 150;
+  const waistOk = v => v >= RANGE.waist[0] && v <= RANGE.waist[1]; // 입력 범위와 같게(왕복 동일성)
 
   function splitMemo(memo) {
     const t = memo ?? '';

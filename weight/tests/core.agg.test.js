@@ -78,3 +78,11 @@ test('empty inputs return empty results', () => {
   assert.deepEqual(C.sma([], 5), []);
   assert.equal(C.changeOver([], 7), null);
 });
+
+test('changeOver ignores comparison points far from the window start', () => {
+  const s = C.series([W('2024-01-01', 80), W('2026-11-20', 75), W('2026-11-26', 74.5)], 'weight');
+  assert.equal(C.changeOver(s, 7), null);
+  assert.equal(C.changeOver(s, 30), null);
+  const s2 = C.series([W('2026-11-17', 76), W('2026-11-26', 74.5)], 'weight');
+  near(C.changeOver(s2, 7), -1.5); // 9일 전 값: 7일 기준 허용 범위(3일) 안
+});
