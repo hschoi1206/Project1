@@ -163,22 +163,13 @@
 
   /* ===== .databody 백업 (기존 앱 형식: gzip JSON) ===== */
   const WAIST_RE = /^\s*(\d{2,3}(?:\.\d+)?)\s*$/;
-  const WAIST_MEMO_RE = /^\s*(\d{2,3}(?:\.\d+)?)\s*\/\s*(.*)$/s;
   const waistOk = v => v >= RANGE.waist[0] && v <= RANGE.waist[1]; // 입력 범위와 같게(왕복 동일성)
 
   function splitMemo(memo) {
     const t = memo ?? '';
-    let m = t.match(WAIST_RE);
+    const m = t.match(WAIST_RE);
     if (m && waistOk(+m[1])) return { waist: +m[1], memo: '' };
-    m = t.match(WAIST_MEMO_RE);
-    if (m && waistOk(+m[1])) return { waist: +m[1], memo: m[2].trim() };
     return { waist: null, memo: t };
-  }
-
-  function joinMemo(waist, memo) {
-    const w = waist != null ? waist.toFixed(1) : '';
-    if (w && memo) return `${w} / ${memo}`;
-    return w || memo || null;
   }
 
   const newId = () => crypto.randomUUID();
@@ -207,8 +198,8 @@
     return { records, profile, stats };
   }
 
-  function mergeRecords(existing, incoming, mode) {
-    if (mode === 'replace') return sortByDate(incoming.map(r => ({ ...r })));
+  // 같은 날짜는 칸별로 합친다: 파일에 값이 있는 칸은 파일 값, 없는 칸은 폰 값 유지.
+  function mergeRecords(existing, incoming) {
     const m = new Map(existing.map(r => [r.date, { ...r }]));
     for (const r of incoming) {
       const cur = m.get(r.date);
@@ -220,36 +211,69 @@
     return sortByDate([...m.values()]);
   }
 
-  const EMPTY_KEYS = ['diets', 'exercises', 'metricRecords', 'habitRecords', 'water', 'dailyActivities',
-    'metricDefinitions', 'habitDefinitions', 'nutrientDefinitions', 'foodLibrary', 'exerciseLibrary'];
-
-  function buildDatabody(records, profile, nowMs) {
-    const p = profile || {};
-    const o = {
-      formatVersion: 1, app: 'databody', exportedAt: nowMs, appVersion: null,
-      weights: records.map(r => ({
-        id: r.id, weight: r.weight, unit: r.weight != null ? 'kg' : null, weightInKg: r.weight,
-        timestamp: dn(r.date) * DAY - 9 * 3600e3, timeZoneId: 'Asia/Seoul', date: r.date,
-        memo: joinMemo(r.waist, r.memo), source: 'manual', externalId: null, externalSourceApp: null, updatedAt: nowMs,
-      })),
-    };
-    for (const k of EMPTY_KEYS) o[k] = [];
-    o.settings = { weight_unit: 'kg', height_unit: 'cm' };
-    if (p.heightCm != null) o.settings.height_cm = Number(p.heightCm).toFixed(1);
-    if (p.birthDate) o.settings.birth_date = p.birthDate;
-    if (p.sex) o.settings.gender = p.sex;
-    return o;
-  }
-
   async function pipeBytes(bytes, stream) {
     return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
   }
-  const gzipText = text => pipeBytes(new TextEncoder().encode(text), new CompressionStream('gzip'));
   const gunzipToText = async bytes => new TextDecoder().decode(await pipeBytes(bytes, new DecompressionStream('gzip')));
+
+  /* ===== 이 앱의 백업: CSV (date,weight_kg,waist_cm,memo) ===== */
+  const CSV_HEAD = ['date', 'weight_kg', 'waist_cm', 'memo'];
+  const csvCell = v => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  function toCsv(records) {
+    const rows = records.map(r => [r.date, r.weight != null ? r.weight.toFixed(1) : '', r.waist != null ? r.waist.toFixed(1) : '', csvCell(r.memo || '')].join(','));
+    return '\uFEFF' + [CSV_HEAD.join(','), ...rows].join('\r\n') + '\r\n';
+  }
+  function csvRows(text) {
+    const rows = []; let row = [], cell = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; }
+      else if (c === '"') q = true;
+      else if (c === ',') { row.push(cell); cell = ''; }
+      else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+      else cell += c;
+    }
+    if (cell || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+  }
+  function parseCsv(text) {
+    const rows = csvRows(String(text).replace(/^\uFEFF/, ''));
+    if (!rows.length || rows[0].map(h => h.trim()).join(',') !== CSV_HEAD.join(',')) throw new Error('체중 기록 CSV 형식이 아닙니다');
+    const byDate = new Map(), stats = { weights: 0, waists: 0, memos: 0, skipped: 0, dupDropped: 0 };
+    for (const r of rows.slice(1)) {
+      if (r.length === 1 && !r[0].trim()) continue;
+      const date = (r[0] || '').trim(), weight = parseNum(r[1], 'weight'), waist = parseNum(r[2], 'waist'), memo = (r[3] || '').trim();
+      const valid = /^\d{4}-\d{2}-\d{2}$/.test(date) && isoOf(dn(date)) === date;
+      if (!valid || weight === undefined || waist === undefined || (weight == null && waist == null && !memo)) { stats.skipped++; continue; }
+      if (byDate.has(date)) stats.dupDropped++;
+      byDate.set(date, { id: newId(), date, weight, waist, memo });
+    }
+    const records = sortByDate([...byDate.values()]);
+    for (const r of records) { if (r.weight != null) stats.weights++; if (r.waist != null) stats.waists++; if (r.memo) stats.memos++; }
+    return { records, stats };
+  }
+  // 파일 내용으로 형식 판별: gzip이면 이전 앱(.databody), 아니면 이 앱 CSV
+  async function readBackup(bytes) {
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b) return { kind: 'databody', ...parseDatabody(JSON.parse(await gunzipToText(bytes))) };
+    return { kind: 'csv', profile: {}, ...parseCsv(new TextDecoder().decode(bytes)) };
+  }
+
+  /* ===== WHtR · 홈 입력 ===== */
+  const whtr = (waist, h) => (waist && h ? Math.round(waist / h * 100) / 100 : null);
+  const whtrClass = v => (v < 0.5 ? '정상 범위' : '주의 (복부비만 위험)');
+  // replace=false: 빈 칸은 기존 값 유지(새 입력). replace=true: 입력한 그대로 바꿈(수정).
+  function applyEntry(cur, e, replace, date) {
+    const r = cur ? { ...cur } : { id: newId(), date, weight: null, waist: null, memo: '' };
+    if (replace) return { ...r, weight: e.weight, waist: e.waist, memo: e.memo };
+    if (e.weight != null) r.weight = e.weight;
+    if (e.waist != null) r.waist = e.waist;
+    if (e.memo) r.memo = e.memo;
+    return r;
+  }
 
   const WTCore = { dn, isoOf, dow, parseNum, series, rolling, weekly, monthly, sma, changeOver,
     pairs, linreg, bmi, bmiClass, ageOn, CLINICAL, interp, baseline, glp1Series,
-    splitMemo, joinMemo, parseDatabody, mergeRecords, buildDatabody, gzipText, gunzipToText, newId };
+    splitMemo, parseDatabody, mergeRecords, gunzipToText, newId, toCsv, parseCsv, readBackup, whtr, whtrClass, applyEntry };
   if (typeof module !== 'undefined' && module.exports) module.exports = WTCore;
   else g.WTCore = WTCore;
 })(typeof self !== 'undefined' ? self : globalThis);
