@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#152027">
 <title>체중·허리 기록</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <style>
 :root{
   --bg:#152027;--surface:#1c2a32;--raise:#243641;--line:#2f424e;
@@ -638,6 +641,7 @@ function renderGlp() {
 load();
 navigator.storage?.persist?.();
 show('home');
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
 </html>
