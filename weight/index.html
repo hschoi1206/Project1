@@ -62,8 +62,22 @@ h2{font-size:15px;font-weight:600;color:var(--muted);margin:28px 0 10px}
 .summary .now td:first-child{font-size:14px;font-weight:400;color:var(--muted)}
 .dn{color:var(--weight)} .up{color:var(--danger)}
 
+/* 그날 기록 카드 */
+.daycard{margin-top:6px;background:var(--surface);border-radius:14px;padding:12px 14px}
+.daycard .t{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+.daycard .t .sp{flex:1}
+.daycard .t button{border:0;background:var(--raise);border-radius:9px;padding:6px 12px;font-size:13px;cursor:pointer}
+.daycard .t button.del{background:none;color:var(--danger);border:1px solid #5a3a37}
+.daycard .v{display:flex;gap:18px;margin-top:6px;font-variant-numeric:tabular-nums;align-items:baseline}
+.daycard .v b{font-size:22px} .daycard .v .w{color:var(--weight)} .daycard .v .ws{color:var(--waist)}
+.daycard .v small{color:var(--muted);font-size:13px}
+.daycard .m{color:var(--muted);font-size:13px;margin-top:4px}
+.daycard.none{color:var(--muted);font-size:14px}
+
 /* 기록 */
-.month{position:sticky;top:0;background:var(--bg);color:var(--muted);font-size:13px;padding:14px 2px 6px}
+.loghead{position:sticky;top:0;z-index:2;background:var(--bg);display:grid;grid-template-columns:62px 64px 64px 1fr;gap:6px;padding:10px 2px 8px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
+.loghead .w{color:var(--weight)} .loghead .ws{color:var(--waist)}
+.month{position:sticky;top:37px;z-index:1;background:var(--bg);color:var(--muted);font-size:13px;padding:14px 2px 6px}
 .row{display:grid;grid-template-columns:62px 64px 64px 1fr;gap:6px;align-items:baseline;padding:11px 2px;border-bottom:1px solid var(--line);cursor:pointer;font-variant-numeric:tabular-nums}
 .row .d{color:var(--muted);font-size:14px}
 .row .d.sun{color:#ff9c8f} .row .d.sat{color:#8fb6ff}
@@ -91,6 +105,8 @@ h2{font-size:15px;font-weight:600;color:var(--muted);margin:28px 0 10px}
 .backup label.btn{display:block;text-align:left}
 .backup input[type=file]{display:none}
 .note{color:var(--muted);font-size:13px;margin:8px 2px 0}
+#meSave{width:100%;margin-top:18px}
+#meSave.dirty{background:var(--waist);color:#2a2105}
 
 /* 차트 공통 */
 .seg{display:flex;background:var(--surface);border-radius:12px;padding:3px;gap:2px}
@@ -148,21 +164,23 @@ nav button.on svg{stroke:var(--weight)}
   <input id="inMemo" class="memo" placeholder="메모 (선택)" autocomplete="off">
   <div class="actions">
     <button class="btn primary" id="saveBtn">저장</button>
-    <button class="btn danger hidden" id="delBtn">삭제</button>
+    <button class="btn hidden" id="cancelEdit">취소</button>
   </div>
   <p id="msg" role="status"></p>
+  <div id="dayCard"></div>
   <div id="homeSummary"></div>
 </section>
 
 <section id="view-log" class="view hidden">
   <h1>기록</h1>
   <p class="sub" id="logCount"></p>
+  <div class="loghead" id="logHead"><span>날짜</span><span class="w">체중 kg</span><span class="ws">허리 cm</span><span>메모</span></div>
   <div id="logList"></div>
 </section>
 
 <section id="view-chart" class="view hidden">
   <div class="seg" id="chartModes">
-    <button data-mode="day" class="on">일간</button><button data-mode="week">주간</button><button data-mode="month">월간</button><button data-mode="corr">상관</button>
+    <button data-mode="day" class="on">일간</button><button data-mode="week">주간</button><button data-mode="month">월간</button><button data-mode="corr">체중·허리</button>
   </div>
   <div id="chartBody"></div>
 </section>
@@ -180,6 +198,7 @@ nav button.on svg{stroke:var(--weight)}
     <div class="f"><span>성별</span><select id="sex"><option value="">선택</option><option value="male">남성</option><option value="female">여성</option></select></div>
   </div>
   <div class="bmi" id="bmiBox"></div>
+  <div class="bmi" id="whtrBox"></div>
 
   <h2>다이어트 주사</h2>
   <div class="form">
@@ -188,13 +207,15 @@ nav button.on svg{stroke:var(--weight)}
     <div class="f glp-f"><span>투약 시작일</span><input id="glpStart" type="date"></div>
   </div>
 
+  <button class="btn primary" id="meSave">저장</button>
+
   <h2>백업</h2>
   <div class="backup">
-    <label class="btn">합쳐서 불러오기 (.databody)<input type="file" id="importMerge" accept=".databody,application/gzip,application/octet-stream"></label>
-    <label class="btn">모두 바꿔 불러오기 (.databody)<input type="file" id="importReplace" accept=".databody,application/gzip,application/octet-stream"></label>
-    <button class="btn" id="exportBtn" style="text-align:left">내보내기 (.databody)</button>
+    <label class="btn">불러오기 (CSV 또는 이전 앱 .databody)<input type="file" id="importFile"></label>
+    <button class="btn" id="exportBtn" style="text-align:left">내보내기 (CSV)</button>
   </div>
-  <p class="note">내보낸 파일은 기존 체중 기록 앱 형식입니다. 이 앱은 체중·허리둘레·메모만 저장하므로, 기존 앱에 넣으면 음주·식단 기록은 빠진 상태가 됩니다.</p>
+  <p class="note">불러오기: 같은 날짜가 있으면 파일에 있는 값으로 덮어씁니다. 파일에 없는 칸은 지금 값을 그대로 둡니다.</p>
+  <p class="note">내보내기: 날짜·체중·허리둘레·메모를 CSV 파일로 저장합니다. 엑셀이나 구글 시트에서 열 수 있습니다.</p>
   <p class="note">모든 기록은 이 폰의 브라우저에만 저장되고 어디로도 전송되지 않습니다.</p>
 </section>
 
@@ -252,21 +273,42 @@ document.querySelectorAll('nav button').forEach(b => b.addEventListener('click',
 
 /* ===== 홈 ===== */
 // 입력칸이 '그날의 오늘'로 채워졌는지 기억해 두고, 날짜가 바뀐 뒤 앱으로 돌아오면 새 오늘로 바꾼다.
-let entryToday = '';
+let entryToday = '', editing = false;
+const mdw = date => { const d = new Date(date + 'T00:00'); return `${d.getMonth() + 1}월 ${d.getDate()}일 ${WK[d.getDay()]}요일`; };
+function setEditing(on) {
+  editing = on;
+  $('saveBtn').textContent = on ? '수정 저장' : '저장';
+  $('cancelEdit').classList.toggle('hidden', !on);
+}
+function clearInputs() { $('inWeight').value = ''; $('inWaist').value = ''; $('inMemo').value = ''; setEditing(false); }
 function fillEntry(date) {
   entryToday = date === todayIso() ? date : '';
   $('inDate').value = date;
-  const r = recOf(date);
-  $('inWeight').value = r?.weight != null ? r.weight.toFixed(1) : '';
-  $('inWaist').value = r?.waist != null ? r.waist.toFixed(1) : '';
-  $('inMemo').value = r?.memo || '';
-  $('delBtn').classList.toggle('hidden', !r);
-  const d = new Date(date + 'T00:00');
-  $('homeTitle').textContent = date === todayIso() ? '오늘' : `${d.getMonth() + 1}월 ${d.getDate()}일 ${WK[d.getDay()]}요일`;
+  clearInputs();
+  $('homeTitle').textContent = date === todayIso() ? '오늘' : mdw(date);
+}
+function renderDayCard() {
+  const date = $('inDate').value, r = recOf(date), box = $('dayCard');
+  if (!r) { box.innerHTML = `<div class="daycard none">${mdw(date)}에는 아직 기록이 없습니다.</div>`; return; }
+  box.innerHTML = `<div class="daycard"><div class="t"><span>${mdw(date)} 기록</span><span class="sp"></span><button id="editBtn">수정</button><button id="delBtn" class="del">삭제</button></div>
+    <div class="v"><span><b class="w">${f1(r.weight)}</b> <small>kg</small></span><span><b class="ws">${f1(r.waist)}</b> <small>cm</small></span></div>
+    ${r.memo ? `<div class="m">${esc(r.memo)}</div>` : ''}</div>`;
+  $('editBtn').onclick = () => {
+    $('inWeight').value = r.weight != null ? r.weight.toFixed(1) : '';
+    $('inWaist').value = r.waist != null ? r.waist.toFixed(1) : '';
+    $('inMemo').value = r.memo || '';
+    setEditing(true); setMsg('값을 고친 뒤 [수정 저장]을 누르세요. 비운 칸은 지워집니다.', true);
+  };
+  $('delBtn').onclick = () => {
+    if (!confirm(`${mdw(date)} 기록을 삭제할까요?`)) return;
+    state.records = state.records.filter(x => x.date !== date);
+    save(); clearInputs(); setMsg(''); toast(`${mdw(date)} 기록을 삭제했습니다.`); renderHome(true);
+  };
 }
 function setMsg(t, ok) { $('msg').textContent = t; $('msg').classList.toggle('ok', !!ok); }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && current === 'home') renderHome(true); });
-$('inDate').addEventListener('change', () => { if ($('inDate').value) { fillEntry($('inDate').value); setMsg(''); } });
+$('inDate').addEventListener('change', () => { if ($('inDate').value) { fillEntry($('inDate').value); setMsg(''); renderHome(true); } });
+$('cancelEdit').addEventListener('click', () => { clearInputs(); setMsg(''); });
 
 $('saveBtn').addEventListener('click', () => {
   const date = $('inDate').value;
@@ -277,27 +319,19 @@ $('saveBtn').addEventListener('click', () => {
   if (weight === undefined) return setMsg('체중은 20–300 kg 사이 숫자로 입력하세요.');
   if (waist === undefined) return setMsg('허리둘레는 40–200 cm 사이 숫자로 입력하세요.');
   if (waist == null && /^\d+([.,]\d+)?$/.test(memo)) return setMsg('허리둘레는 메모가 아니라 허리둘레 칸에 입력하세요.');
-  if (weight == null && waist == null && !memo) return setMsg('체중이나 허리둘레를 입력하세요.');
-  const r = recOf(date);
-  if (r) Object.assign(r, { weight, waist, memo });
-  else { state.records.push({ id: C.newId(), date, weight, waist, memo }); state.records.sort((a, b) => (a.date < b.date ? -1 : 1)); }
+  if (weight == null && waist == null && !memo) return setMsg(editing ? '모두 지우려면 기록 카드의 [삭제]를 누르세요.' : '체중이나 허리둘레를 입력하세요.');
+  const cur = recOf(date), next = C.applyEntry(cur, { weight, waist, memo }, editing, date);
+  state.records = state.records.filter(x => x.date !== date).concat(next).sort((a, b) => (a.date < b.date ? -1 : 1));
   save();
-  setMsg('저장했습니다.', true);
-  renderHome(true);
-});
-$('delBtn').addEventListener('click', () => {
-  const date = $('inDate').value;
-  if (!recOf(date) || !confirm(`${date} 기록을 삭제할까요?`)) return;
-  state.records = state.records.filter(r => r.date !== date);
-  save();
-  setMsg('삭제했습니다.', true);
+  clearInputs(); setMsg('');
+  toast(`${mdw(date)} 기록을 저장했습니다.`);
   renderHome(true);
 });
 
 function renderHome(keepEntry) {
   const stale = entryToday && $('inDate').value === entryToday && entryToday !== todayIso();
   if (keepEntry !== true || stale) { fillEntry(stale ? todayIso() : ($('inDate').value || todayIso())); setMsg(''); }
-  else $('delBtn').classList.toggle('hidden', !recOf($('inDate').value));
+  renderDayCard();
   const sw = C.series(state.records, 'weight'), sz = C.series(state.records, 'waist');
   if (!sw.length && !sz.length) { $('homeSummary').innerHTML = '<p class="empty">아직 기록이 없습니다. 오늘 체중부터 입력해 보세요.</p>'; return; }
   const lastW = sw[sw.length - 1], lastZ = sz[sz.length - 1];
@@ -315,6 +349,7 @@ function renderHome(keepEntry) {
 function renderLog() {
   const rs = state.records;
   $('logCount').textContent = rs.length ? `${rs.length}일 기록` : '';
+  $('logHead').classList.toggle('hidden', !rs.length);
   if (!rs.length) { $('logList').innerHTML = '<p class="empty">기록이 없습니다. 홈에서 첫 기록을 입력하세요.</p>'; return; }
   let html = '', month = '';
   for (let i = rs.length - 1; i >= 0; i--) {
@@ -340,51 +375,54 @@ function renderMe() {
   $('glpOn').checked = !!g.enabled;
   $('glpDrug').value = g.drug || 'wegovy';
   $('glpStart').value = g.startDate || '';
-  document.querySelectorAll('.glp-f').forEach(el => el.classList.toggle('hidden', !g.enabled));
+  glpFields(); setDirty(false);
   const sw = C.series(state.records, 'weight'), last = sw[sw.length - 1];
-  const b = C.bmi(last?.v, p.heightCm), age = C.ageOn(p.birthDate, todayIso());
+  const sz = C.series(state.records, 'waist'), lastZ = sz[sz.length - 1];
+  const b = C.bmi(last?.v, p.heightCm), age = C.ageOn(p.birthDate, todayIso()), w = C.whtr(lastZ?.v, p.heightCm);
   $('bmiBox').innerHTML = b
     ? `<b>${b.toFixed(1)}</b><span>BMI · ${C.bmiClass(b)}</span><small style="margin-left:auto">${last.v.toFixed(1)} kg 기준${age != null ? ` · ${age}세` : ''}</small>`
     : `<small>키와 체중을 입력하면 BMI를 계산합니다${age != null ? ` · ${age}세` : ''}</small>`;
+  $('whtrBox').innerHTML = w
+    ? `<b>${w.toFixed(2)}</b><span>WHtR · ${C.whtrClass(w)}</span><small style="margin-left:auto">허리 ÷ 키 · ${lastZ.v.toFixed(1)} cm</small>`
+    : '<small>키와 허리둘레를 입력하면 WHtR(허리 ÷ 키)을 계산합니다. 0.5 이상이면 복부비만 위험으로 봅니다.</small>';
 }
-function updProfile(fn) { fn(state.profile); save(); render(); }
-$('height').addEventListener('change', () => {
-  const v = parseFloat($('height').value.replace(',', '.'));
-  updProfile(p => { if (v >= 80 && v <= 250) p.heightCm = v; else { delete p.heightCm; if ($('height').value) toast('키는 80–250 cm 사이로 입력하세요.'); } });
+const glpFields = () => document.querySelectorAll('.glp-f').forEach(el => el.classList.toggle('hidden', !$('glpOn').checked));
+function setDirty(on) { $('meSave').classList.toggle('dirty', on); $('meSave').textContent = on ? '저장 (바뀐 내용 있음)' : '저장'; }
+['height', 'birth', 'sex', 'glpOn', 'glpDrug', 'glpStart'].forEach(id => ['input', 'change'].forEach(ev => $(id).addEventListener(ev, () => { setDirty(true); if (id === 'glpOn') glpFields(); })));
+$('meSave').addEventListener('click', () => {
+  const hv = $('height').value.trim(), h = parseFloat(hv.replace(',', '.'));
+  if (hv && !(h >= 80 && h <= 250)) return toast('키는 80–250 cm 사이로 입력하세요.');
+  const p = state.profile;
+  if (hv) p.heightCm = h; else delete p.heightCm;
+  if ($('birth').value) p.birthDate = $('birth').value; else delete p.birthDate;
+  if ($('sex').value) p.sex = $('sex').value; else delete p.sex;
+  p.glp1 = { enabled: $('glpOn').checked, drug: $('glpDrug').value, startDate: $('glpStart').value || '' };
+  save(); render();
+  toast('내 정보를 저장했습니다.');
 });
-$('birth').addEventListener('change', () => updProfile(p => { p.birthDate = $('birth').value || undefined; }));
-$('sex').addEventListener('change', () => updProfile(p => { p.sex = $('sex').value || undefined; }));
-const glpUpd = () => updProfile(p => { p.glp1 = { enabled: $('glpOn').checked, drug: $('glpDrug').value, startDate: $('glpStart').value || '' }; });
-['glpOn', 'glpDrug', 'glpStart'].forEach(id => $(id).addEventListener('change', glpUpd));
 
 /* ===== 백업 ===== */
-async function importFile(input, mode) {
-  const file = input.files[0]; input.value = '';
+$('importFile').addEventListener('change', async e => {
+  const input = e.target, file = input.files[0]; input.value = '';
   if (!file) return;
   try {
-    const text = await C.gunzipToText(new Uint8Array(await file.arrayBuffer()));
-    const { records, profile, stats } = C.parseDatabody(JSON.parse(text));
-    if (mode === 'replace' && !confirm(`지금 기록 ${state.records.length}일을 모두 지우고 파일 내용으로 바꿀까요?`)) return;
-    state.records = C.mergeRecords(state.records, records, mode);
+    const { records, profile, stats } = await C.readBackup(new Uint8Array(await file.arrayBuffer()));
+    state.records = C.mergeRecords(state.records, records);
     for (const k of ['heightCm', 'birthDate', 'sex']) if (state.profile[k] == null && profile[k] != null) state.profile[k] = profile[k];
     save(); render();
-    toast(`체중 ${stats.weights}건, 허리둘레 ${stats.waists}건, 메모 ${stats.memos}건을 불러왔습니다.${stats.dupDropped ? ` (같은 날짜 중복 ${stats.dupDropped}건 제외)` : ''}`);
-  } catch (e) {
-    toast('파일을 불러오지 못했습니다. 기존 체중 앱에서 내보낸 .databody 파일인지 확인하세요. 기존 기록은 그대로입니다.');
+    toast(`체중 ${stats.weights}건, 허리둘레 ${stats.waists}건, 메모 ${stats.memos}건을 불러왔습니다.${stats.dupDropped ? ` (같은 날짜 중복 ${stats.dupDropped}건 제외)` : ''}${stats.skipped ? ` 읽을 수 없는 줄 ${stats.skipped}개는 건너뛰었습니다.` : ''}`);
+  } catch (err) {
+    toast('파일을 불러오지 못했습니다. 이 앱에서 내보낸 CSV나 이전 앱의 .databody 파일인지 확인하세요. 기존 기록은 그대로입니다.');
   }
-}
-$('importMerge').addEventListener('change', e => importFile(e.target, 'merge'));
-$('importReplace').addEventListener('change', e => importFile(e.target, 'replace'));
-$('exportBtn').addEventListener('click', async () => {
+});
+$('exportBtn').addEventListener('click', () => {
   if (!state.records.length) return toast('내보낼 기록이 없습니다.');
-  const gz = await C.gzipText(JSON.stringify(C.buildDatabody(state.records, state.profile, Date.now())));
-  const t = new Date(), p = n => String(n).padStart(2, '0');
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([gz], { type: 'application/octet-stream' }));
-  a.download = `${todayIso()}_${p(t.getHours())}${p(t.getMinutes())}.databody`;
+  a.href = URL.createObjectURL(new Blob([C.toCsv(state.records)], { type: 'text/csv;charset=utf-8' }));
+  a.download = `weight_${todayIso()}.csv`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  toast(`기록 ${state.records.length}일을 내보냈습니다.`);
+  toast(`기록 ${state.records.length}일을 CSV로 내보냈습니다.`);
 });
 
 /* ===== 그래프 공통 ===== */
@@ -557,7 +595,7 @@ function renderChart() {
 function renderCorr(body) {
   const since = chartSt.range === '1y' ? C.isoOf(C.dn(todayIso()) - 365) : undefined;
   const pts = C.pairs(state.records, since), reg = C.linreg(pts);
-  body.innerHTML = `<div class="seg" id="corrRange" style="margin-top:10px"><button data-r="all">전체</button><button data-r="1y">최근 1년</button></div>
+  body.innerHTML = `<h2 style="margin-top:18px">체중–허리둘레 상관</h2><div class="seg" id="corrRange"><button data-r="all">전체</button><button data-r="1y">최근 1년</button></div>
     <div class="corrstats">${reg ? `<span><b>r = ${reg.r.toFixed(2)}</b><small>상관계수</small></span><span><b>${reg.slope.toFixed(2)} cm/kg</b><small>체중 1kg당 허리둘레</small></span>` : ''}<span><b>${pts.length}개</b><small>체중·허리둘레를 같은 날 잰 기록</small></span></div>
     <div class="chart"><svg id="chartSvg"></svg><div class="tip" id="chartTip"></div></div>
     <p class="hint">가로는 체중, 세로는 허리둘레입니다. 점이 진할수록 최근 기록입니다. 점을 탭하면 날짜와 값이 보입니다.</p>`;
