@@ -19,6 +19,9 @@
 ## 데이터
 기기 브라우저의 `localStorage`(`weightTracker.v1`)에만 저장되며 서버로 전송되지 않습니다. 브라우저 데이터를 지우면 기록도 지워지므로 가끔 내보내기로 백업하세요.
 
+## 사용 안내
+친구에게는 `https://hschoi1206.github.io/Project1/weight/guide.html`을 보내면 됩니다. 설치 방법과 기능 설명이 있고, 앱 [내 정보] → [사용 안내 보기]로도 열립니다. 설명서의 앱 화면 사진은 예시 데이터로 찍은 것입니다.
+
 ## 설치 (Android)
 1. Chrome으로 `https://hschoi1206.github.io/Project1/weight/` 열기
 2. 메뉴 ⋮ → **앱 설치** (또는 홈 화면에 추가)
