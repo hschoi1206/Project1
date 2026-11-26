@@ -1,6 +1,6 @@
 {
   "name": "weight-tracker-apk",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
   "description": "체중·허리 기록 앱을 안드로이드 APK로 감싸는 Capacitor 프로젝트",
   "scripts": {

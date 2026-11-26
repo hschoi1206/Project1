@@ -118,6 +118,8 @@ h2{font-size:15px;font-weight:600;color:var(--muted);margin:28px 0 10px}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:10px;font-size:13px;color:var(--muted)}
 .legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
 .hint{color:var(--muted);font-size:12px;margin-top:8px}
+.segrow{display:flex;gap:8px;margin-top:10px}
+.segrow #chartField{flex:2} .segrow #chartStyle{flex:1}
 .corrstats{display:flex;gap:18px;margin-top:14px;flex-wrap:wrap}
 .corrstats span{display:flex;flex-direction:column}
 .corrstats b{font-size:20px;font-variant-numeric:tabular-nums}
@@ -244,7 +246,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const WK = '일월화수목금토';
 const f1 = v => (v == null ? '-' : v.toFixed(1));
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.1.0';
 const isNativeApp = () => !!window.Capacitor?.isNativePlatform?.();
 const todayIso = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
 
@@ -459,7 +461,7 @@ $('resetBtn').addEventListener('click', () => {
 });
 
 /* ===== 그래프 공통 ===== */
-const COL = { raw: '#cdd8dd', weight: '#8fd4bf', waist: '#f0c74a', violet: '#b49cff', blue: '#7aa7ff', placebo: '#8c9ca4', grid: '#2f424e', label: '#8fa3ac' };
+const COL = { up: '#ff6b6b', dn: '#5b9bff', eq: '#8c9ca4', raw: '#cdd8dd', weight: '#8fd4bf', waist: '#f0c74a', violet: '#b49cff', blue: '#7aa7ff', placebo: '#8c9ca4', grid: '#2f424e', label: '#8fa3ac' };
 const PAD = { l: 8, r: 46, t: 12, b: 26 };
 const ymd2 = d => { const s = C.isoOf(d); return `${s.slice(2, 4)}.${s.slice(5, 7)}.${s.slice(8)}`; };
 function niceTicks(lo, hi, n = 5) {
@@ -555,7 +557,9 @@ class TimeZoom {
 // 시계열 그래프: series = [{pts:[[x,y]], color, width, dots, label}], 가로 x는 일 번호 또는 주차
 function plotTime(svg, W, H, view, series, opt) {
   const [t0, t1] = view, x0 = PAD.l, x1 = W - PAD.r, y0 = PAD.t, y1 = H - PAD.b;
-  const vis = series.flatMap(s => s.pts.filter(p => p[0] >= t0 - (t1 - t0) * .02 && p[0] <= t1 + (t1 - t0) * .02).map(p => p[1]));
+  const inView = t => t >= t0 - (t1 - t0) * .02 && t <= t1 + (t1 - t0) * .02;
+  const cdl = (opt.candles || []).filter(k => inView(k.d));
+  const vis = series.flatMap(s => s.pts.filter(p => inView(p[0])).map(p => p[1])).concat(cdl.flatMap(k => [k.h, k.l]));
   let lo = Math.min(...vis, ...(opt.yInclude || [])), hi = Math.max(...vis, ...(opt.yInclude || []));
   if (!isFinite(lo)) { lo = 0; hi = 1; }
   if (hi - lo < 1) { const c = (hi + lo) / 2; lo = c - .5; hi = c + .5; }
@@ -567,6 +571,16 @@ function plotTime(svg, W, H, view, series, opt) {
   const xt = opt.xTicks(t0, t1);
   g += xt.map(([t, lab]) => `<text class="xl" x="${X(t)}" y="${H - 8}" text-anchor="middle" fill="${COL.label}" font-size="11">${lab}</text>`).join('');
   g += `<g clip-path="url(#clip-${svg.id})">`;
+  if (cdl.length) {
+    // 캔들: 양봉(증가) 붉은 계열, 음봉(감소) 푸른 계열, 변동 없음 회색
+    const bw = Math.max(1.5, Math.min(16, (x1 - x0) / cdl.length * 0.62));
+    for (const k of cdl) {
+      const cls = k.c > k.o ? 'up' : k.c < k.o ? 'dn' : 'eq', col = COL[cls], x = X(k.d);
+      const top = Y(Math.max(k.o, k.c)), bh = Math.max(1.5, Math.abs(Y(k.o) - Y(k.c)));
+      g += `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${Y(k.h).toFixed(1)}" y2="${Y(k.l).toFixed(1)}" stroke="${col}" stroke-width="1"/>`;
+      g += `<rect class="cdl ${cls}" x="${(x - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${col}" rx="${bw > 6 ? 1 : 0}"/>`;
+    }
+  }
   for (const s of series) {
     const pts = s.pts.filter(p => p[0] >= t0 - (t1 - t0) && p[0] <= t1 + (t1 - t0));
     if (!pts.length) continue;
@@ -582,7 +596,8 @@ function plotTime(svg, W, H, view, series, opt) {
 const dateTicks = (t0, t1) => { const n = 4, out = []; for (let i = 0; i < n; i++) { const t = t0 + (t1 - t0) * (i + .5) / n; out.push([t, ymd2(Math.round(t))]); } return out; };
 
 /* ===== 차트 탭 ===== */
-const chartSt = { mode: 'day', field: 'weight', range: 'all' };
+const STYLE_KEY = 'weightTracker.chartStyle';
+const chartSt = { mode: 'day', field: 'weight', range: 'all', style: localStorage.getItem(STYLE_KEY) === 'candle' ? 'candle' : 'line' };
 let zoom = null;
 document.querySelectorAll('#chartModes button').forEach(b => b.addEventListener('click', () => { chartSt.mode = b.dataset.mode; renderChart(); }));
 const MODES = {
@@ -597,14 +612,21 @@ function renderChart() {
   if (!state.records.length) { body.innerHTML = '<p class="empty">기록이 없습니다. 기록이 쌓이면 그래프가 그려집니다.</p>'; return; }
   if (chartSt.mode === 'corr') return renderCorr(body);
   const M = MODES[chartSt.mode], f = chartSt.field, fc = COL[f], unit = f === 'weight' ? 'kg' : 'cm';
-  body.innerHTML = `<div class="seg" id="chartField" style="margin-top:10px"><button data-field="weight">체중</button><button data-field="waist">허리둘레</button></div>
+  const candle = chartSt.style === 'candle';
+  body.innerHTML = `<div class="segrow"><div class="seg" id="chartField"><button data-field="weight">체중</button><button data-field="waist">허리둘레</button></div>
+    <div class="seg" id="chartStyle"><button data-style="line">선</button><button data-style="candle">캔들</button></div></div>
     <div class="legend" id="chartLegend"></div><div class="chart"><svg id="chartSvg"></svg><div class="tip" id="chartTip"></div></div>
-    <p class="hint">두 손가락으로 기간 확대·축소, 한 손가락으로 이동, 두 번 탭하면 처음 보기로 돌아갑니다. 선을 탭하면 값이 보입니다.</p>`;
+    <p class="hint">두 손가락으로 기간 확대·축소, 한 손가락으로 이동, 두 번 탭하면 처음 보기로 돌아갑니다. ${candle ? '봉' : '선'}을 탭하면 값이 보입니다.</p>`;
   body.querySelectorAll('#chartField button').forEach(b => { b.classList.toggle('on', b.dataset.field === f); b.onclick = () => { chartSt.field = b.dataset.field; renderChart(); }; });
+  body.querySelectorAll('#chartStyle button').forEach(b => { b.classList.toggle('on', b.dataset.style === chartSt.style); b.onclick = () => { chartSt.style = b.dataset.style; localStorage.setItem(STYLE_KEY, chartSt.style); renderChart(); }; });
   const s = C.series(state.records, f);
   if (!s.length) { body.querySelector('.chart').innerHTML = `<p class="empty">${f === 'weight' ? '체중' : '허리둘레'} 기록이 없습니다.</p>`; return; }
-  const series = M.build(s).map(x => ({ ...x, color: x.color === 'F' ? fc : x.color, pts: x.pts.map(p => [p.d, p.v]) }));
-  $('chartLegend').innerHTML = series.map(x => `<span><i style="background:${x.color}"></i>${x.label}</span>`).join('');
+  const built = M.build(s).map(x => ({ ...x, color: x.color === 'F' ? fc : x.color, pts: x.pts.map(p => [p.d, p.v]) }));
+  const series = candle ? built.slice(1) : built;  // 캔들 모드: 기본선 대신 봉, 평균선은 유지
+  const cdls = candle ? C.candles(s, chartSt.mode) : null;
+  $('chartLegend').innerHTML = (candle ? `<span><i style="background:${COL.up}"></i>증가(양봉)</span><span><i style="background:${COL.dn}"></i>감소(음봉)</span>` : '')
+    + series.map(x => `<span><i style="background:${x.color}"></i>${x.label}</span>`).join('');
+  const when = t => chartSt.mode === 'week' ? `${C.isoOf(t - 6)} ~ ${C.isoOf(t)}` : chartSt.mode === 'month' ? `${C.isoOf(t).slice(0, 4)}년 ${+C.isoOf(t).slice(5, 7)}월` : C.isoOf(t);
   const first = s[0].d, last = s[s.length - 1].d, b0 = first - 3, b1 = last + 3;
   const svg = $('chartSvg'), H = Math.round(Math.min(window.innerHeight * .5, 380));
   let ctx = null;
@@ -612,10 +634,17 @@ function renderChart() {
     minSpan: M.minSpan, tip: $('chartTip'),
     bounds: () => [b0, b1],
     defaultView: () => [Math.max(b0, b1 - M.def), b1],
-    render: (view, W) => { ctx = plotTime(svg, W, H, view, series, { yFmt: v => v.toFixed(Number.isInteger(v) ? 0 : 1), xTicks: dateTicks }); window.__chartView = view; window.__chartY = [ctx.lo.toFixed(2), ctx.hi.toFixed(2)]; },
+    render: (view, W) => { ctx = plotTime(svg, W, H, view, series, { candles: cdls, yFmt: v => v.toFixed(Number.isInteger(v) ? 0 : 1), xTicks: dateTicks }); window.__chartView = view; window.__chartY = [ctx.lo.toFixed(2), ctx.hi.toFixed(2)]; },
     hit: (x, y) => {
       if (!ctx) return null;
       let best = null;
+      if (candle) {
+        for (const k of cdls) { const dx = Math.abs(ctx.X(k.d) - x); if (dx < 24 && (!best || dx < best.dx)) best = { dx, k }; }
+        if (!best) return null;
+        const k = best.k, f2 = v => `${v.toFixed(1)} ${unit}`;
+        const ma = series.map(sr => { const q = sr.pts.find(v => v[0] === k.d); return q ? `${sr.label} ${q[1].toFixed(2)} ${unit}` : null; }).filter(Boolean);
+        return { x: ctx.X(k.d), y: ctx.Y(k.h), text: [when(k.d), `시가 ${f2(k.o)} · 종가 ${f2(k.c)}`, `고가 ${f2(k.h)} · 저가 ${f2(k.l)}`, chartSt.mode === 'day' ? '시가는 직전 기록' : `기록 ${k.n}일`, ...ma].join('\n') };
+      }
       for (const p of series[0].pts) { const dx = Math.abs(ctx.X(p[0]) - x); if (dx < 24 && (!best || dx < best.dx)) best = { dx, p }; }
       if (!best) return null;
       const t = best.p[0], lines = series.map(sr => { const q = sr.pts.find(v => v[0] === t); return q ? `${sr.label} ${q[1].toFixed(2)} ${unit}` : null; }).filter(Boolean);

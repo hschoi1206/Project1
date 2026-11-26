@@ -48,13 +48,27 @@
       .map(([key, vs]) => ({ d: endOf(key), key, v: mean(vs), n: vs.length, step }));
   }
 
-  const weekly = s => bucket(s, d => d - dow(d), k => k + 6, 7);
-  const monthly = s => bucket(
-    s,
-    d => { const t = new Date(d * DAY); return t.getUTCFullYear() * 12 + t.getUTCMonth(); },
-    k => Date.UTC(Math.floor(k / 12), k % 12 + 1, 0) / DAY,
-    1
-  );
+  const weekKey = d => d - dow(d), weekEnd = k => k + 6;
+  const monthKey = d => { const t = new Date(d * DAY); return t.getUTCFullYear() * 12 + t.getUTCMonth(); };
+  const monthEnd = k => Date.UTC(Math.floor(k / 12), k % 12 + 1, 0) / DAY;
+  const weekly = s => bucket(s, weekKey, weekEnd, 7);
+  const monthly = s => bucket(s, monthKey, monthEnd, 1);
+
+  // 캔들(시가·고가·저가·종가). 주·월: 구간의 첫/최고/최저/마지막 기록. 일: 전날 기록 → 오늘 기록.
+  function candles(s, unit) {
+    if (unit === 'day') return s.map((p, i) => {
+      const o = i ? s[i - 1].v : p.v;
+      return { d: p.d, o, h: Math.max(o, p.v), l: Math.min(o, p.v), c: p.v, n: 1 };
+    });
+    const [keyOf, endOf] = unit === 'week' ? [weekKey, weekEnd] : [monthKey, monthEnd];
+    const out = [];
+    for (const p of s) {
+      const k = keyOf(p.d), last = out[out.length - 1];
+      if (last && last.key === k) { last.h = Math.max(last.h, p.v); last.l = Math.min(last.l, p.v); last.c = p.v; last.n++; }
+      else out.push({ key: k, o: p.v, h: p.v, l: p.v, c: p.v, n: 1 });
+    }
+    return out.map(({ key, o, h, l, c, n }) => ({ d: endOf(key), o, h, l, c, n }));
+  }
 
   // 각 버킷에서 key가 최근 k칸 안인 버킷 평균. 칸 간격(step)은 주 7, 월 1.
   function sma(buckets, k) {
@@ -271,7 +285,7 @@
     return r;
   }
 
-  const WTCore = { dn, isoOf, dow, parseNum, series, rolling, weekly, monthly, sma, changeOver,
+  const WTCore = { dn, isoOf, dow, parseNum, series, rolling, weekly, monthly, sma, changeOver, candles,
     pairs, linreg, bmi, bmiClass, ageOn, CLINICAL, interp, baseline, glp1Series,
     splitMemo, parseDatabody, mergeRecords, gunzipToText, newId, toCsv, parseCsv, readBackup, whtr, whtrClass, applyEntry };
   if (typeof module !== 'undefined' && module.exports) module.exports = WTCore;
