@@ -160,8 +160,95 @@
     return { status: points.some(p => p.d > s) ? 'ok' : 'noData', base, points };
   }
 
+  /* ===== .databody 백업 (기존 앱 형식: gzip JSON) ===== */
+  const WAIST_RE = /^\s*(\d{2,3}(?:\.\d+)?)\s*$/;
+  const WAIST_MEMO_RE = /^\s*(\d{2,3}(?:\.\d+)?)\s*\/\s*(.*)$/s;
+  const waistOk = v => v >= 50 && v <= 150;
+
+  function splitMemo(memo) {
+    const t = memo ?? '';
+    let m = t.match(WAIST_RE);
+    if (m && waistOk(+m[1])) return { waist: +m[1], memo: '' };
+    m = t.match(WAIST_MEMO_RE);
+    if (m && waistOk(+m[1])) return { waist: +m[1], memo: m[2].trim() };
+    return { waist: null, memo: t };
+  }
+
+  function joinMemo(waist, memo) {
+    const w = waist != null ? waist.toFixed(1) : '';
+    if (w && memo) return `${w} / ${memo}`;
+    return w || memo || null;
+  }
+
+  const newId = () => crypto.randomUUID();
+  const sortByDate = rs => rs.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  function parseDatabody(obj) {
+    if (!obj || obj.app !== 'databody' || !Array.isArray(obj.weights)) throw new Error('databody 형식이 아닙니다');
+    const byDate = new Map();
+    const stats = { weights: 0, waists: 0, memos: 0, skipped: 0, dupDropped: 0 };
+    for (const w of obj.weights) {
+      if (!w || !/^\d{4}-\d{2}-\d{2}$/.test(w.date)) { stats.skipped++; continue; }
+      const { waist, memo } = splitMemo(w.memo);
+      const weight = typeof w.weightInKg === 'number' ? w.weightInKg : null;
+      if (weight == null && waist == null && !memo) { stats.skipped++; continue; }
+      const rec = { id: w.id || newId(), date: w.date, weight, waist, memo, _u: w.updatedAt || 0 };
+      const prev = byDate.get(w.date);
+      if (prev) { stats.dupDropped++; if (prev._u >= rec._u) continue; }
+      byDate.set(w.date, rec);
+    }
+    const records = sortByDate([...byDate.values()].map(({ _u, ...r }) => r));
+    for (const r of records) { if (r.weight != null) stats.weights++; if (r.waist != null) stats.waists++; if (r.memo) stats.memos++; }
+    const s = obj.settings || {}, profile = {};
+    if (s.height_cm != null && !isNaN(parseFloat(s.height_cm))) profile.heightCm = parseFloat(s.height_cm);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s.birth_date || '')) profile.birthDate = s.birth_date;
+    if (s.gender === 'male' || s.gender === 'female') profile.sex = s.gender;
+    return { records, profile, stats };
+  }
+
+  function mergeRecords(existing, incoming, mode) {
+    if (mode === 'replace') return sortByDate(incoming.map(r => ({ ...r })));
+    const m = new Map(existing.map(r => [r.date, { ...r }]));
+    for (const r of incoming) {
+      const cur = m.get(r.date);
+      if (!cur) { m.set(r.date, { ...r }); continue; }
+      if (r.weight != null) cur.weight = r.weight;
+      if (r.waist != null) cur.waist = r.waist;
+      if (r.memo) cur.memo = r.memo;
+    }
+    return sortByDate([...m.values()]);
+  }
+
+  const EMPTY_KEYS = ['diets', 'exercises', 'metricRecords', 'habitRecords', 'water', 'dailyActivities',
+    'metricDefinitions', 'habitDefinitions', 'nutrientDefinitions', 'foodLibrary', 'exerciseLibrary'];
+
+  function buildDatabody(records, profile, nowMs) {
+    const p = profile || {};
+    const o = {
+      formatVersion: 1, app: 'databody', exportedAt: nowMs, appVersion: null,
+      weights: records.map(r => ({
+        id: r.id, weight: r.weight, unit: r.weight != null ? 'kg' : null, weightInKg: r.weight,
+        timestamp: dn(r.date) * DAY - 9 * 3600e3, timeZoneId: 'Asia/Seoul', date: r.date,
+        memo: joinMemo(r.waist, r.memo), source: 'manual', externalId: null, externalSourceApp: null, updatedAt: nowMs,
+      })),
+    };
+    for (const k of EMPTY_KEYS) o[k] = [];
+    o.settings = { weight_unit: 'kg', height_unit: 'cm' };
+    if (p.heightCm != null) o.settings.height_cm = Number(p.heightCm).toFixed(1);
+    if (p.birthDate) o.settings.birth_date = p.birthDate;
+    if (p.sex) o.settings.gender = p.sex;
+    return o;
+  }
+
+  async function pipeBytes(bytes, stream) {
+    return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+  }
+  const gzipText = text => pipeBytes(new TextEncoder().encode(text), new CompressionStream('gzip'));
+  const gunzipToText = async bytes => new TextDecoder().decode(await pipeBytes(bytes, new DecompressionStream('gzip')));
+
   const WTCore = { dn, isoOf, dow, parseNum, series, rolling, weekly, monthly, sma, changeOver,
-    pairs, linreg, bmi, bmiClass, ageOn, CLINICAL, interp, baseline, glp1Series };
+    pairs, linreg, bmi, bmiClass, ageOn, CLINICAL, interp, baseline, glp1Series,
+    splitMemo, joinMemo, parseDatabody, mergeRecords, buildDatabody, gzipText, gunzipToText, newId };
   if (typeof module !== 'undefined' && module.exports) module.exports = WTCore;
   else g.WTCore = WTCore;
 })(typeof self !== 'undefined' ? self : globalThis);
