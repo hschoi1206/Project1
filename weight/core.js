@@ -104,8 +104,64 @@
     return ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0);
   }
 
+  /* ===== 투약(GLP-1) 임상 비교 =====
+   * [주차, 기준 대비 체중 변화율 %]. 첫 점 0, 마지막 점은 논문 본문 최종값(치료정책/치료방침 추정치).
+   * 중간 주차 값은 모두 근사값이다(개발 환경에서 논문 원문 그림에 접근하지 못함).
+   * - 위고비: STEP 1 시간별 그래프(사용자 제공 참고 그래프)를 판독한 값. 60주 최저점은 논문 서술과 일치.
+   * - 마운자로: 72주 최종값과 24주 전체 용량 평균(약 −13~−15%, Horn 2025 Clin Obes)에 맞춘 근사 곡선.
+   */
+  const CLINICAL = {
+    wegovy: {
+      weeks: 68,
+      source: 'STEP 1 (Wilding et al., NEJM 2021) · 68주 최종값은 논문 수치, 중간 주차는 그래프 판독 근사값',
+      arms: [
+        { key: 'sema24', label: '위고비 2.4mg', color: '#4f8cff',
+          pts: [[0, 0], [4, -1.9], [8, -4.3], [12, -6.8], [16, -8.5], [20, -10.0], [28, -12.3], [36, -13.8], [44, -14.6], [52, -15.1], [60, -15.3], [68, -14.9]] },
+        { key: 'placebo', label: '위약', color: '#22a06b',
+          pts: [[0, 0], [4, -0.6], [8, -0.9], [12, -1.3], [16, -1.6], [20, -1.8], [28, -2.0], [36, -2.3], [44, -2.4], [52, -2.5], [60, -2.5], [68, -2.4]] },
+      ],
+    },
+    mounjaro: {
+      weeks: 72,
+      source: 'SURMOUNT-1 (Jastreboff et al., NEJM 2022) · 72주 최종값은 논문 수치, 중간 주차는 근사 추정값(원문 그림 미대조)',
+      arms: [
+        { key: 'tirz15', label: '마운자로 15mg (고용량)', color: '#4f8cff',
+          pts: [[0, 0], [4, -2.8], [8, -5.5], [12, -8.0], [16, -10.3], [20, -12.4], [24, -14.4], [36, -17.6], [48, -19.6], [60, -20.6], [72, -20.9]] },
+        { key: 'tirz5', label: '마운자로 5mg (저용량)', color: '#a78bfa',
+          pts: [[0, 0], [4, -2.6], [8, -4.8], [12, -6.8], [16, -8.5], [20, -9.9], [24, -11.1], [36, -13.3], [48, -14.5], [60, -15.0], [72, -15.0]] },
+        { key: 'placebo', label: '위약', color: '#22a06b',
+          pts: [[0, 0], [4, -0.8], [8, -1.3], [12, -1.7], [16, -2.0], [20, -2.3], [24, -2.5], [36, -2.8], [48, -3.0], [60, -3.1], [72, -3.1]] },
+      ],
+    },
+  };
+
+  function interp(pts, week) {
+    if (week < pts[0][0] || week > pts[pts.length - 1][0]) return null;
+    for (let i = 1; i < pts.length; i++) {
+      const [w0, v0] = pts[i - 1], [w1, v1] = pts[i];
+      if (week <= w1) return v0 + (v1 - v0) * (week - w0) / (w1 - w0);
+    }
+    return null;
+  }
+
+  function baseline(records, startIso) {
+    const s = dn(startIso);
+    const c = series(records, 'weight').filter(p => p.d <= s && p.d >= s - 14);
+    return c.length ? { d: c[c.length - 1].d, weight: c[c.length - 1].v } : null;
+  }
+
+  function glp1Series(records, startIso, todayIso) {
+    const s = dn(startIso);
+    if (s > dn(todayIso)) return { status: 'future', base: null, points: [] };
+    const base = baseline(records, startIso);
+    if (!base) return { status: 'noBaseline', base: null, points: [] };
+    const points = series(records, 'weight').filter(p => p.d >= s)
+      .map(p => ({ d: p.d, week: (p.d - s) / 7, pct: (p.v / base.weight - 1) * 100, weight: p.v }));
+    return { status: points.some(p => p.d > s) ? 'ok' : 'noData', base, points };
+  }
+
   const WTCore = { dn, isoOf, dow, parseNum, series, rolling, weekly, monthly, sma, changeOver,
-    pairs, linreg, bmi, bmiClass, ageOn };
+    pairs, linreg, bmi, bmiClass, ageOn, CLINICAL, interp, baseline, glp1Series };
   if (typeof module !== 'undefined' && module.exports) module.exports = WTCore;
   else g.WTCore = WTCore;
 })(typeof self !== 'undefined' ? self : globalThis);
