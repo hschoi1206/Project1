@@ -211,7 +211,7 @@ nav button.on svg{stroke:var(--weight)}
 
   <h2>백업</h2>
   <div class="backup">
-    <label class="btn">불러오기 (CSV 또는 이전 앱 .databody)<input type="file" id="importFile"></label>
+    <label class="btn">불러오기 (CSV)<input type="file" id="importFile"></label>
     <button class="btn" id="exportBtn" style="text-align:left">내보내기 (CSV)</button>
   </div>
   <p class="note">불러오기: 같은 날짜가 있으면 파일에 있는 값으로 덮어씁니다. 파일에 없는 칸은 지금 값을 그대로 둡니다.</p>
@@ -419,7 +419,7 @@ $('importFile').addEventListener('change', async e => {
     save(); render();
     toast(`체중 ${stats.weights}건, 허리둘레 ${stats.waists}건, 메모 ${stats.memos}건을 불러왔습니다.${stats.dupDropped ? ` (같은 날짜 중복 ${stats.dupDropped}건 제외)` : ''}${stats.skipped ? ` 읽을 수 없는 줄 ${stats.skipped}개는 건너뛰었습니다.` : ''}`);
   } catch (err) {
-    toast('파일을 불러오지 못했습니다. 이 앱에서 내보낸 CSV나 이전 앱의 .databody 파일인지 확인하세요. 기존 기록은 그대로입니다.');
+    toast('파일을 불러오지 못했습니다. 이 앱에서 내보낸 CSV 파일인지 확인하세요. 기존 기록은 그대로입니다.');
   }
 });
 $('exportBtn').addEventListener('click', () => {
